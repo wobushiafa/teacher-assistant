@@ -1,0 +1,154 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:TeacherAssistant.Desktop.ViewModels"
+        xmlns:views="using:TeacherAssistant.Desktop.Views"
+        x:Class="TeacherAssistant.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        mc:Ignorable="d"
+        Title="Teacher Assistant 教师助手"
+        Width="1200"
+        Height="800"
+        MinWidth="900"
+        MinHeight="600">
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0" Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
+            <Border Padding="12,10">
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*">
+                <TextBlock Grid.Column="0" Text="教师助手" FontWeight="Bold" FontSize="18" VerticalAlignment="Center" Margin="0,0,20,0" />
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="交互模式" VerticalAlignment="Center" />
+                    <ComboBox Width="120" ItemsSource="{Binding Whiteboard.InteractionOptions}" SelectedItem="{Binding Whiteboard.SelectedInteractionOption}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WhiteboardInteractionOption">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0,0,0">
+                    <TextBlock Text="工具" VerticalAlignment="Center" />
+                    <ComboBox Width="120" ItemsSource="{Binding Whiteboard.ToolOptions}" SelectedItem="{Binding Whiteboard.SelectedToolOption}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WhiteboardToolOption">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0,0,0">
+                    <TextBlock Text="颜色" VerticalAlignment="Center" />
+                    <ComboBox Width="120" ItemsSource="{Binding Whiteboard.PenColorOptions}" SelectedItem="{Binding Whiteboard.SelectedPenColor}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PenColorOption">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Brush}" BorderBrush="#D1D5DB" BorderThickness="1" />
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0,0,0">
+                    <TextBlock Text="粗细" VerticalAlignment="Center" />
+                    <Slider Width="140" Minimum="1" Maximum="12" Value="{Binding Whiteboard.PenThickness}" />
+                    <TextBlock Text="{Binding Whiteboard.PenThickness, StringFormat={}{0:F1}}" Width="40" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="20,0,0,0">
+                    <CheckBox Content="笔锋" IsChecked="{Binding Whiteboard.UsePenNibEffect}" VerticalAlignment="Center" />
+                    <CheckBox Content="贝塞尔平滑" IsChecked="{Binding Whiteboard.UseBezierSmoothing}" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <Button Grid.Column="6" HorizontalAlignment="Right" Content="清空白板" Padding="14,8" Command="{Binding Whiteboard.ClearCommand}" />
+                </Grid>
+            </Border>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="220,*,220">
+            <Border Grid.Column="0" Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="0,0,1,0">
+                <ScrollViewer>
+                    <StackPanel Margin="12" Spacing="12">
+                        <TextBlock Text="插入内容" FontWeight="Bold" FontSize="16" />
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="插入图片" FontWeight="SemiBold" />
+                            <Button Content="从本地添加图片" Click="OnInsertImageClicked" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="插入形状" FontWeight="SemiBold" />
+                            <UniformGrid Columns="2" Rows="4">
+                                <Button Margin="2" Content="矩形" Command="{Binding Whiteboard.AddRectangleCommand}" />
+                                <Button Margin="2" Content="椭圆" Command="{Binding Whiteboard.AddEllipseCommand}" />
+                                <Button Margin="2" Content="三角形" Command="{Binding Whiteboard.AddTriangleCommand}" />
+                                <Button Margin="2" Content="星形" Command="{Binding Whiteboard.AddStarCommand}" />
+                                <Button Margin="2" Content="直角三角" Command="{Binding Whiteboard.AddRightTriangleCommand}" />
+                                <Button Margin="2" Content="菱形" Command="{Binding Whiteboard.AddDiamondCommand}" />
+                                <Button Margin="2" Content="五边形" Command="{Binding Whiteboard.AddPentagonCommand}" />
+                                <Button Margin="2" Content="六边形" Command="{Binding Whiteboard.AddHexagonCommand}" />
+                            </UniformGrid>
+                            <Button Content="箭头" Command="{Binding Whiteboard.AddArrowCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <views:WhiteboardView Grid.Column="1" DataContext="{Binding Whiteboard}" />
+
+            <Border Grid.Column="2"
+                    IsVisible="{Binding Whiteboard.IsObjectSelected}"
+                    Margin="16" Width="200"
+                    Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                    ZIndex="10">
+                <Border Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="对象属性" FontWeight="Bold" Margin="0,0,0,4" />
+
+                        <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="X坐标" FontSize="11" Foreground="#666666" />
+                            <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding Whiteboard.SelectedObjectX, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Y坐标" FontSize="11" Foreground="#666666" />
+                            <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding Whiteboard.SelectedObjectY, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,8,*,32" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="宽度" FontSize="11" Foreground="#666666" />
+                            <TextBox Grid.Row="1" Grid.Column="0"
+                                     Text="{Binding Whiteboard.SelectedObjectWidth, UpdateSourceTrigger=PropertyChanged}"
+                                     IsReadOnly="{Binding Whiteboard.SelectedObjectIsSizeLocked}" />
+
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="高度" FontSize="11" Foreground="#666666" />
+                            <TextBox Grid.Row="1" Grid.Column="2"
+                                     Text="{Binding Whiteboard.SelectedObjectHeight, UpdateSourceTrigger=PropertyChanged}"
+                                     IsReadOnly="{Binding Whiteboard.SelectedObjectIsSizeLocked}" />
+
+                            <ToggleButton Grid.Row="1" Grid.Column="3"
+                                          IsChecked="{Binding Whiteboard.SelectedObjectIsSizeLocked}"
+                                          Padding="0" Margin="4,0,0,0" ToolTip.Tip="锁定尺寸">
+                                <TextBlock Text="🔒" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </ToggleButton>
+                        </Grid>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="旋转角度" FontSize="11" Foreground="#666666" />
+                            <Slider Minimum="-180" Maximum="180" Value="{Binding Whiteboard.SelectedObjectRotationDegrees}" />
+                            <TextBox Text="{Binding Whiteboard.SelectedObjectRotationDegrees, UpdateSourceTrigger=PropertyChanged}" HorizontalContentAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4" IsVisible="{Binding Whiteboard.IsSelectedShape}">
+                            <TextBlock Text="边框粗细" FontSize="11" Foreground="#666666" />
+                            <Slider Minimum="0" Maximum="20" Value="{Binding Whiteboard.SelectedShape.StrokeThickness}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
