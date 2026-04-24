@@ -132,6 +132,7 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         new("画笔", WhiteboardTool.Pen),
         new("荧光笔", WhiteboardTool.Highlighter),
         new("橡皮擦", WhiteboardTool.Eraser),
+        new("激光笔", WhiteboardTool.LaserPointer),
     ];
 
     public IReadOnlyList<PenColorOption> PenColorOptions { get; } =

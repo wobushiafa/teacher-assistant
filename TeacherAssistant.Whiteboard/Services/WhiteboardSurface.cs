@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
@@ -10,6 +11,7 @@ using Avalonia.Platform;
 using TeacherAssistant.Whiteboard.Interactions;
 using TeacherAssistant.Whiteboard.Models;
 using TeacherAssistant.Whiteboard.Undo;
+using Avalonia.Threading;
 
 namespace TeacherAssistant.Whiteboard.Services;
 
@@ -25,6 +27,9 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private readonly Stack<IUndoCommand> _redoStack = new();
     
     private (Point Center, double ScaleX, double ScaleY, double Rotation)? _initialTransform;
+    
+    private readonly List<LaserStroke> _laserStrokes = new();
+    private DispatcherTimer? _laserTimer;
     
     private readonly Dictionary<long, WhiteboardStroke> _activeStrokes = new();
     private readonly Dictionary<long, (Point Pos, Point Trend)> _filters = new();
@@ -46,6 +51,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public double? ActiveSnapX => _transformInteraction.ActiveSnapX;
     public double? ActiveSnapY => _transformInteraction.ActiveSnapY;
     public WhiteboardStroke? ActiveStroke => _activeStrokes.Values.FirstOrDefault();
+    public IReadOnlyList<LaserStroke> LaserStrokes => _laserStrokes;
     public bool CanUndo => _undoStack.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
 
@@ -82,6 +88,17 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public void BeginStroke(Point point, Color color, double thickness, WhiteboardTool tool, long pointerId)
     {
         DeselectImage();
+
+        if (tool == WhiteboardTool.LaserPointer)
+        {
+            var ls = new LaserStroke(pointerId, thickness);
+            ls.Points.Add(point);
+            _laserStrokes.Add(ls);
+            StartLaserTimer();
+            NotifySurfaceChanged();
+            return;
+        }
+
         _filters[pointerId] = (point, new Point(0, 0));
 
         var stroke = new WhiteboardStroke(GetStrokeColor(color, tool), thickness, tool);
@@ -95,6 +112,15 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void ContinueStroke(Point rawPoint, long pointerId)
     {
+        var ls = _laserStrokes.FirstOrDefault(x => x.PointerId == pointerId && !x.IsFinished);
+        if (ls != null)
+        {
+            if (AreClose(ls.Points[^1], rawPoint)) return;
+            ls.Points.Add(rawPoint);
+            NotifyRenderChanged();
+            return;
+        }
+
         if (!_activeStrokes.TryGetValue(pointerId, out var stroke)) return;
         if (!_filters.TryGetValue(pointerId, out var filter)) return;
 
@@ -132,6 +158,13 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void EndStroke(long pointerId)
     {
+        var ls = _laserStrokes.FirstOrDefault(x => x.PointerId == pointerId && !x.IsFinished);
+        if (ls != null)
+        {
+            ls.IsFinished = true;
+            return;
+        }
+
         if (!_activeStrokes.TryGetValue(pointerId, out var stroke)) return;
 
         // 烘焙到主位图层
@@ -368,6 +401,31 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     {
         OnPropertyChanged(nameof(CanUndo));
         OnPropertyChanged(nameof(CanRedo));
+    }
+
+    private void StartLaserTimer()
+    {
+        if (_laserTimer != null && _laserTimer.IsEnabled) return;
+        
+        _laserTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(30), DispatcherPriority.Render, OnLaserTimerTick);
+        _laserTimer.Start();
+    }
+
+    private void OnLaserTimerTick(object? sender, EventArgs e)
+    {
+        bool changed = false;
+        for (int i = _laserStrokes.Count - 1; i >= 0; i--)
+        {
+            var s = _laserStrokes[i];
+            if (s.IsFinished) s.Opacity -= 0.08;
+            else s.Opacity -= 0.005;
+
+            if (s.Opacity <= 0) _laserStrokes.RemoveAt(i);
+            changed = true;
+        }
+
+        if (changed) NotifyRenderChanged();
+        if (_laserStrokes.Count == 0) _laserTimer?.Stop();
     }
 
     public void DeselectImage()

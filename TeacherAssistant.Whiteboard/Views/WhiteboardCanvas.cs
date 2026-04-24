@@ -84,8 +84,45 @@ public sealed class WhiteboardCanvas : Control
             context.DrawLine(snapPen, new Point(0, y), new Point(Bounds.Width, y));
         }
 
-        // 6. 画板边框
+        // 6. 激光笔图层绘制
+        RenderLaserStrokes(context);
+
+        // 7. 画板边框
         context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.Parse("#22000000")), 1), bounds);
+    }
+
+    private void RenderLaserStrokes(DrawingContext context)
+    {
+        if (Surface?.LaserStrokes == null || Surface.LaserStrokes.Count == 0) return;
+
+        foreach (var stroke in Surface.LaserStrokes)
+        {
+            if (stroke.Points.Count < 2) continue;
+
+            var geometry = new StreamGeometry();
+            using (var ctx = geometry.Open())
+            {
+                ctx.BeginFigure(stroke.Points[0], false);
+                for (int i = 1; i < stroke.Points.Count; i++)
+                {
+                    ctx.LineTo(stroke.Points[i]);
+                }
+                ctx.EndFigure(false);
+            }
+
+            // Outer glow
+            var glowBrush = new SolidColorBrush(Colors.Red, 0.4 * stroke.Opacity);
+            context.DrawGeometry(null, new Pen(glowBrush, stroke.Thickness * 2.5, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), geometry);
+            
+            // Core
+            var coreBrush = new SolidColorBrush(Colors.White, 0.9 * stroke.Opacity);
+            context.DrawGeometry(null, new Pen(coreBrush, stroke.Thickness * 0.8, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), geometry);
+            
+            // Tip dot
+            var tip = stroke.Points[^1];
+            context.DrawEllipse(new SolidColorBrush(Colors.Red, 0.8 * stroke.Opacity), null, new Rect(tip.X - stroke.Thickness, tip.Y - stroke.Thickness, stroke.Thickness * 2, stroke.Thickness * 2));
+            context.DrawEllipse(new SolidColorBrush(Colors.White, 0.9 * stroke.Opacity), null, new Rect(tip.X - stroke.Thickness * 0.5, tip.Y - stroke.Thickness * 0.5, stroke.Thickness, stroke.Thickness));
+        }
     }
 
     private void OnSurfacePropertyChanged(object? sender, PropertyChangedEventArgs e) => RequestRedraw();
