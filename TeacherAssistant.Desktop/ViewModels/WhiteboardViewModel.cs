@@ -180,6 +180,7 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
     }
 
     public IRelayCommand ClearCommand { get; }
+    public IRelayCommand RemoveSelectedItemCommand { get; }
     public IRelayCommand<WhiteboardShapeType> AddShapeCommand { get; }
     public IRelayCommand AddRectangleCommand { get; }
     public IRelayCommand AddEllipseCommand { get; }
@@ -197,6 +198,7 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         SelectedToolOption = ToolOptions[0];
         SelectedInteractionOption = InteractionOptions[0];
         ClearCommand = new RelayCommand(_controller.Clear);
+        RemoveSelectedItemCommand = new RelayCommand(_controller.RemoveSelectedItem);
 
         AddShapeCommand = new RelayCommand<WhiteboardShapeType>(type =>
             _controller.AddShape(type, new Size(100, 100), SelectedPenColor.Color, Colors.Transparent, PenThickness));
@@ -272,9 +274,9 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
 
     public void Clear() => _controller.Clear();
     public void EnsureSize(int width, int height) => _controller.EnsureSize(width, height);
-    public void BeginStroke(Point point) => _controller.BeginStroke(point);
-    public void ContinueStroke(Point point) => _controller.ContinueStroke(point);
-    public void EndStroke() => _controller.EndStroke();
+    public void BeginStroke(Point point, long pointerId = 0) => _controller.BeginStroke(point, pointerId);
+    public void ContinueStroke(Point point, long pointerId = 0) => _controller.ContinueStroke(point, pointerId);
+    public void EndStroke(long pointerId = 0) => _controller.EndStroke(pointerId);
 
     partial void OnUsePenNibEffectChanged(bool value) => _controller.UsePenNibEffect = value;
     partial void OnUseBezierSmoothingChanged(bool value) => _controller.UseBezierSmoothing = value;

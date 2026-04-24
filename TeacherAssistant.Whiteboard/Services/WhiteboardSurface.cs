@@ -20,14 +20,11 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private readonly SurfaceRenderCoordinator _renderCoordinator = new();
     private readonly TransformInteractionService _transformInteraction;
     
+    private readonly Dictionary<long, WhiteboardStroke> _activeStrokes = new();
+    private readonly Dictionary<long, (Point Pos, Point Trend)> _filters = new();
     private IToolSession? _activeSession;
-    private WhiteboardStroke? _activeStroke;
     private bool _usePenNibEffect = true;
     private bool _useBezierSmoothing = true;
-
-    // --- 灵动平滑滤波器状态 ---
-    private Point _filterPos;
-    private Point _filterTrend;
 
     private WhiteboardOptions _options = WhiteboardOptions.Default;
 
@@ -42,7 +39,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public WriteableBitmap? PreviewBitmap => _renderCoordinator.PreviewBitmap;
     public double? ActiveSnapX => _transformInteraction.ActiveSnapX;
     public double? ActiveSnapY => _transformInteraction.ActiveSnapY;
-    public WhiteboardStroke? ActiveStroke => _activeStroke;
+    public WhiteboardStroke? ActiveStroke => _activeStrokes.Values.FirstOrDefault();
 
     public bool UsePenNibEffect 
     { 
@@ -74,71 +71,93 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public void SetActiveSession(IToolSession? session) { _activeSession = session; }
     public IToolSession CreateToolSession(WhiteboardTool tool) => ToolSessionFactory.Create(_document, tool);
 
-    public void BeginStroke(Point point, Color color, double thickness, WhiteboardTool tool)
+    public void BeginStroke(Point point, Color color, double thickness, WhiteboardTool tool, long pointerId)
     {
         DeselectImage();
-        _filterPos = point; _filterTrend = new Point(0, 0);
+        _filters[pointerId] = (point, new Point(0, 0));
 
         var stroke = new WhiteboardStroke(GetStrokeColor(color, tool), thickness, tool);
-        stroke.Samples.Add(new StrokeSample(point, Stopwatch.GetTimestamp(), _usePenNibEffect ? thickness * 0.1 : thickness));
-        _activeStroke = stroke;
-        _renderCoordinator.ClearPreview();
+        stroke.Samples.Add(new StrokeSample(point, Stopwatch.GetTimestamp(), _usePenNibEffect ? thickness * 0.5 : thickness));
+        _activeStrokes[pointerId] = stroke;
+        
+        // 我们不在这里 ClearPreview，因为可能有其他正在进行的笔迹
+        // 但我们需要确保 UI 知道需要重绘
         NotifySurfaceChanged();
     }
 
-    public void ContinueStroke(Point rawPoint)
+    public void ContinueStroke(Point rawPoint, long pointerId)
     {
-        if (_activeStroke is null) return;
+        if (!_activeStrokes.TryGetValue(pointerId, out var stroke)) return;
+        if (!_filters.TryGetValue(pointerId, out var filter)) return;
 
         const double alpha = 0.65; const double beta = 0.45;
-        var prevPos = _filterPos;
-        _filterPos = rawPoint * alpha + (prevPos + _filterTrend) * (1.0 - alpha);
-        _filterTrend = (_filterPos - prevPos) * beta + _filterTrend * (1.0 - beta);
+        var prevPos = filter.Pos;
+        var filterTrend = filter.Trend;
+        var filterPos = rawPoint * alpha + (prevPos + filterTrend) * (1.0 - alpha);
+        filterTrend = (filterPos - prevPos) * beta + filterTrend * (1.0 - beta);
+        _filters[pointerId] = (filterPos, filterTrend);
 
-        var smoothedPoint = _filterPos;
-        if (AreClose(_activeStroke.Samples[^1].Point, smoothedPoint)) return;
+        var smoothedPoint = filterPos;
+        if (AreClose(stroke.Samples[^1].Point, smoothedPoint)) return;
 
         var ts = Stopwatch.GetTimestamp();
-        var w = ComputeWidth(_activeStroke.Samples[^1], smoothedPoint, ts, _activeStroke.Thickness, _usePenNibEffect);
-        _activeStroke.Samples.Add(new StrokeSample(smoothedPoint, ts, w));
+        var w = ComputeWidth(stroke.Samples[^1], smoothedPoint, ts, stroke.Thickness, _usePenNibEffect);
+        stroke.Samples.Add(new StrokeSample(smoothedPoint, ts, w));
 
-        // ActiveStroke 将由 SyncActiveStrokePreview 内的 NotifyRenderChanged 通知，无需重复触发
-        SyncActiveStrokePreview();
+        SyncActiveStrokePreview(pointerId);
     }
 
-    public void SyncActiveStrokePreview()
+    public void SyncActiveStrokePreview(long pointerId)
     {
-        if (_activeStroke == null) return;
+        if (!_activeStrokes.TryGetValue(pointerId, out var stroke)) return;
         
-        if (_activeStroke.Tool == WhiteboardTool.Highlighter)
+        if (stroke.Tool == WhiteboardTool.Highlighter)
         {
-            // 荧光笔使用矢量渲染，避免透明像素重复叠加变暗，且走 GPU 加速
-            _highlighter.UpdatePreview(_activeStroke, _useBezierSmoothing);
+            _highlighter.UpdatePreview(pointerId, stroke, _useBezierSmoothing);
         }
         else
         {
-            _renderCoordinator.RenderStrokePreview(_activeStroke, _useBezierSmoothing, _usePenNibEffect);
+            _renderCoordinator.RenderStrokePreview(stroke, _useBezierSmoothing, _usePenNibEffect);
         }
-        // 绘制中仅通知渲染相关属性，避免无效的 SelectedItem/Items 等 7 个事件
         NotifyRenderChanged();
     }
 
-    public void EndStroke()
+    public void EndStroke(long pointerId)
     {
-        if (_activeStroke == null) return;
+        if (!_activeStrokes.TryGetValue(pointerId, out var stroke)) return;
 
-        // 核心修复 1：将当前笔迹烘焙到主位图层
-        if (_activeStroke.Tool != WhiteboardTool.Highlighter)
+        // 烘焙到主位图层
+        if (stroke.Tool != WhiteboardTool.Highlighter)
         {
-            _renderCoordinator.CommitStroke(_activeStroke, _useBezierSmoothing, _usePenNibEffect);
+            _renderCoordinator.CommitStroke(stroke, _useBezierSmoothing, _usePenNibEffect);
         }
 
-        // 核心修复 2：加入完成列表，并同步到后端 Document（供橡皮擦使用）
-        _document.AddStroke(ConvertToDocumentElement(_activeStroke));
+        // 加入完成列表
+        _document.AddStroke(ConvertToDocumentElement(stroke));
 
-        // 核心修复 3：清理预览
-        _activeStroke = null;
-        _renderCoordinator.ClearPreview();
+        // 清理状态
+        _activeStrokes.Remove(pointerId);
+        _filters.Remove(pointerId);
+        _highlighter.CommitStroke(pointerId);
+
+        // 如果还有其他正在进行的笔迹，我们需要重建预览层
+        if (_activeStrokes.Count > 0)
+        {
+            _renderCoordinator.ClearPreview();
+            foreach (var active in _activeStrokes.Values)
+            {
+                if (active.Tool != WhiteboardTool.Highlighter)
+                {
+                    // 重绘整个笔迹到预览层
+                    WhiteboardStrokeRenderer.DrawStroke(_renderCoordinator.PreviewBitmap!, active, _useBezierSmoothing, _usePenNibEffect);
+                }
+            }
+        }
+        else
+        {
+            _renderCoordinator.ClearPreview();
+        }
+
         _highlighter.RebuildFromDocument(_document);
         NotifySurfaceChanged();
     }
@@ -173,10 +192,16 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         var dt = Math.Max(1.0 / 1000.0, (ts - prev.Timestamp) / (double)Stopwatch.Frequency);
         var dist = Math.Sqrt((curr.X - prev.Point.X) * (curr.X - prev.Point.X) + (curr.Y - prev.Point.Y) * (curr.Y - prev.Point.Y));
         var velocity = dist / dt;
-        var maxWidth = thickness * 1.2; var minWidth = Math.Max(0.2, thickness * 0.1);
-        var velocityFactor = 1.0 - Math.Exp(-velocity / 600.0);
+
+        // 提升基础粗细和最小值，补偿以前 CPU 抗锯齿 Bug 带来的视觉加粗（约 2px）
+        var maxWidth = thickness * 1.5; 
+        var minWidth = Math.Max(1.0, thickness * 0.4); 
+        // 降低速度敏感度，使得正常书写速度下不会变得过细
+        var velocityFactor = 1.0 - Math.Exp(-velocity / 1500.0);
         var targetWidth = maxWidth - ((maxWidth - minWidth) * velocityFactor);
-        return prev.Width + (targetWidth - prev.Width) * 0.25;
+        
+        // 稍微加快粗细变化的响应速度
+        return prev.Width + (targetWidth - prev.Width) * 0.35;
     }
 
     private static Color GetStrokeColor(Color c, WhiteboardTool t) { if (t != WhiteboardTool.Highlighter) return c; return Color.FromArgb((byte)Math.Min((int)c.A, 96), c.R, c.G, c.B); }
@@ -200,7 +225,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public void ContinueImageDrag(Point point)
     {
         _transformInteraction.ContinueDrag(point, _document.Items);
-        NotifySurfaceChanged();
+        // OnObjectPropertyChanged 会自动监听到位置变化并触发重绘，这里不需要重复触发全量通知
     }
 
     public void EndImageDrag()
@@ -220,6 +245,9 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
              e.PropertyName == nameof(WhiteboardItemBase.RotationDegrees)))
         {
             // Spatial index is owned by the document now.
+            // 位置或大小变化时，只需要触发重绘热路径（极轻量），千万不要触发 10 个全量属性的更新
+            NotifyRenderChanged();
+            return;
         }
 
         NotifySurfaceChanged();

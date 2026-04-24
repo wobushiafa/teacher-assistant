@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -19,7 +20,7 @@ public partial class WhiteboardView : UserControl
     private static readonly Cursor ResizeHorizontalCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor RotateCursor = new(StandardCursorType.Hand);
 
-    private bool _isDrawing;
+    private readonly HashSet<long> _activeDrawingPointers = new();
     private bool _isDraggingImage;
 
     public WhiteboardView()
@@ -59,6 +60,7 @@ public partial class WhiteboardView : UserControl
         var pointerPos = e.GetPosition(this);
         var prop = e.GetCurrentPoint(this).Properties;
         if (!prop.IsLeftButtonPressed) return;
+        Focus();
 
         if (ViewModel.SelectedInteractionMode == WhiteboardInteractionMode.Mouse)
         {
@@ -72,8 +74,8 @@ public partial class WhiteboardView : UserControl
             return;
         }
 
-        _isDrawing = true;
-        ViewModel.BeginStroke(pointerPos);
+        _activeDrawingPointers.Add(e.Pointer.Id);
+        ViewModel.BeginStroke(pointerPos, e.Pointer.Id);
         e.Pointer.Capture(this);
     }
 
@@ -89,7 +91,7 @@ public partial class WhiteboardView : UserControl
             return;
         }
 
-        if (!_isDrawing)
+        if (!_activeDrawingPointers.Contains(e.Pointer.Id))
         {
             UpdateCursor(pointerPos);
             return;
@@ -101,12 +103,12 @@ public partial class WhiteboardView : UserControl
         {
             foreach (var pt in intermediatePoints)
             {
-                ViewModel.ContinueStroke(pt.Position);
+                ViewModel.ContinueStroke(pt.Position, e.Pointer.Id);
             }
         }
         else
         {
-            ViewModel.ContinueStroke(pointerPos);
+            ViewModel.ContinueStroke(pointerPos, e.Pointer.Id);
         }
     }
 
@@ -117,10 +119,9 @@ public partial class WhiteboardView : UserControl
             ViewModel?.Surface.EndImageDrag();
             _isDraggingImage = false;
         }
-        else
+        else if (_activeDrawingPointers.Remove(e.Pointer.Id))
         {
-            ViewModel?.EndStroke();
-            _isDrawing = false;
+            ViewModel?.EndStroke(e.Pointer.Id);
         }
         e.Pointer.Capture(null);
         UpdateCursor(e.GetPosition(this));
@@ -134,19 +135,32 @@ public partial class WhiteboardView : UserControl
             _isDraggingImage = false;
             return;
         }
-        ViewModel?.EndStroke();
-        _isDrawing = false;
+        _activeDrawingPointers.Remove(e.Pointer.Id);
+        ViewModel?.EndStroke(e.Pointer.Id);
     }
 
     private void OnPointerLeave(object? sender, PointerEventArgs e)
     {
-        if (_isDrawing || _isDraggingImage) return;
+        if (_activeDrawingPointers.Count > 0 || _isDraggingImage) return;
         Cursor = null;
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key == Key.Delete || (e.Key == Key.Back && ViewModel?.SelectedInteractionMode == WhiteboardInteractionMode.Mouse))
+        {
+            if (ViewModel?.RemoveSelectedItemCommand.CanExecute(null) == true)
+            {
+                ViewModel.RemoveSelectedItemCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
     }
 
     private void UpdateCursor(Point point)
     {
-        if (ViewModel is null || ViewModel.SelectedInteractionMode != WhiteboardInteractionMode.Mouse || _isDrawing) return;
+        if (ViewModel is null || ViewModel.SelectedInteractionMode != WhiteboardInteractionMode.Mouse || _activeDrawingPointers.Count > 0) return;
 
         var (hit, rotation) = ViewModel.Surface.GetHitInfo(point);
         Cursor = hit switch

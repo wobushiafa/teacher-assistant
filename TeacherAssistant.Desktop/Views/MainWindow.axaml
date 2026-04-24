@@ -146,6 +146,15 @@
                             <TextBlock Text="边框粗细" FontSize="11" Foreground="#666666" />
                             <Slider Minimum="0" Maximum="20" Value="{Binding Whiteboard.SelectedShape.StrokeThickness}" />
                         </StackPanel>
+
+                        <Separator Margin="0,8" />
+
+                        <Button Content="删除对象"
+                                Background="#FEE2E2" Foreground="#DC2626"
+                                BorderBrush="#FECACA" BorderThickness="1"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Padding="12,8"
+                                Command="{Binding Whiteboard.RemoveSelectedItemCommand}" />
                     </StackPanel>
                 </Border>
             </Border>

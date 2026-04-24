@@ -12,7 +12,6 @@ namespace TeacherAssistant.Whiteboard.Views;
 public sealed class WhiteboardCanvas : Control
 {
     private WhiteboardSurface? _surface;
-    private bool _redrawQueued;
 
     public WhiteboardSurface? Surface
     {
@@ -93,13 +92,7 @@ public sealed class WhiteboardCanvas : Control
 
     private void RequestRedraw()
     {
-        if (_redrawQueued) return;
-        _redrawQueued = true;
-        Dispatcher.UIThread.Post(() =>
-        {
-            _redrawQueued = false;
-            InvalidateVisual();
-        }, DispatcherPriority.Render);
+        InvalidateVisual();
     }
 
     private static void DrawSelectionOverlay(DrawingContext context, WhiteboardItemBase item, WhiteboardOptions opts)

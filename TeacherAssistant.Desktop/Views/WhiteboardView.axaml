@@ -8,7 +8,8 @@
              x:Class="TeacherAssistant.Desktop.Views.WhiteboardView"
              x:DataType="vm:WhiteboardViewModel"
              ClipToBounds="True"
-             Background="Transparent">
+             Background="Transparent"
+             Focusable="True">
 
     <whiteboard:WhiteboardCanvas x:Name="Canvas"
                                  HorizontalAlignment="Stretch"

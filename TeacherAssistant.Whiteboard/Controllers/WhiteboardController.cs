@@ -79,7 +79,9 @@ public sealed class WhiteboardController : NotifyPropertyChangedObject, IDisposa
     public void AddShape(WhiteboardShapeType shapeType, Size size, Color strokeColor, Color fillColor, double strokeThickness)
         => Surface.AddShape(shapeType, size, strokeColor, fillColor, strokeThickness);
 
-    public void BeginStroke(Point point)
+    public void RemoveSelectedItem() => Surface.RemoveSelectedItem();
+
+    public void BeginStroke(Point point, long pointerId = 0)
     {
         if (SelectedInteractionMode != WhiteboardInteractionMode.Pen) return;
 
@@ -89,11 +91,10 @@ public sealed class WhiteboardController : NotifyPropertyChangedObject, IDisposa
             return;
         }
 
-        // 核心修复：调用 Surface 的新引擎方法，激活滤波器和预览
-        Surface.BeginStroke(point, PenColor, PenThickness, SelectedTool);
+        Surface.BeginStroke(point, PenColor, PenThickness, SelectedTool, pointerId);
     }
 
-    public void ContinueStroke(Point point)
+    public void ContinueStroke(Point point, long pointerId = 0)
     {
         if (SelectedInteractionMode != WhiteboardInteractionMode.Pen) return;
 
@@ -103,14 +104,14 @@ public sealed class WhiteboardController : NotifyPropertyChangedObject, IDisposa
             return;
         }
 
-        Surface.ContinueStroke(point);
+        Surface.ContinueStroke(point, pointerId);
     }
 
-    public void EndStroke()
+    public void EndStroke(long pointerId = 0)
     {
         if (SelectedTool == WhiteboardTool.Eraser) return;
         
-        Surface.EndStroke();
+        Surface.EndStroke(pointerId);
     }
 
     public void Dispose() => Surface.Dispose();

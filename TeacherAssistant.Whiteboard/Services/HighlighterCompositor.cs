@@ -9,7 +9,7 @@ namespace TeacherAssistant.Whiteboard.Services;
 public sealed class HighlighterCompositor : IDisposable
 {
     private readonly List<(Pen pen, StreamGeometry geometry)> _committedGeometries = [];
-    private WhiteboardStroke? _activeStroke;
+    private readonly Dictionary<long, WhiteboardStroke> _activeStrokes = new();
     private bool _useBezierSmoothing;
 
     public void EnsureSize(int width, int height)
@@ -19,28 +19,28 @@ public sealed class HighlighterCompositor : IDisposable
     public void Reset()
     {
         _committedGeometries.Clear();
-        _activeStroke = null;
+        _activeStrokes.Clear();
     }
 
     public void ClearPreview()
     {
-        _activeStroke = null;
+        _activeStrokes.Clear();
     }
 
-    public void UpdatePreview(WhiteboardStroke stroke, bool useBezierSmoothing)
+    public void UpdatePreview(long pointerId, WhiteboardStroke stroke, bool useBezierSmoothing)
     {
         if (stroke.Samples.Count < 2)
         {
             return;
         }
 
-        _activeStroke = CloneStroke(stroke);
+        _activeStrokes[pointerId] = CloneStroke(stroke);
         _useBezierSmoothing = useBezierSmoothing;
     }
 
-    public void CommitStroke(WhiteboardStroke stroke)
+    public void CommitStroke(long pointerId)
     {
-        _activeStroke = null;
+        _activeStrokes.Remove(pointerId);
     }
 
     public void RebuildFromDocument(WhiteboardDocument document)
@@ -59,7 +59,7 @@ public sealed class HighlighterCompositor : IDisposable
             }
         }
 
-        _activeStroke = null;
+        _activeStrokes.Clear();
     }
 
     public void Render(DrawingContext context, Rect bounds)
@@ -69,12 +69,12 @@ public sealed class HighlighterCompositor : IDisposable
             context.DrawGeometry(null, item.pen, item.geometry);
         }
 
-        if (_activeStroke is not null)
+        foreach (var stroke in _activeStrokes.Values)
         {
-            var geometry = BuildGeometry(_activeStroke, _useBezierSmoothing);
+            var geometry = BuildGeometry(stroke, _useBezierSmoothing);
             if (geometry is not null)
             {
-                var pen = CreatePen(_activeStroke.Color, _activeStroke.Thickness);
+                var pen = CreatePen(stroke.Color, stroke.Thickness);
                 context.DrawGeometry(null, pen, geometry);
             }
         }
