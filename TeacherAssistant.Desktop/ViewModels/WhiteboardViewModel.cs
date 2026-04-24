@@ -118,6 +118,8 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
     }
 
     public bool IsSelectedShape => SelectedShape is not null;
+    public bool CanUndo => _controller.Surface.CanUndo;
+    public bool CanRedo => _controller.Surface.CanRedo;
 
     public IReadOnlyList<WhiteboardInteractionOption> InteractionOptions { get; } =
     [
@@ -181,6 +183,8 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
 
     public IRelayCommand ClearCommand { get; }
     public IRelayCommand RemoveSelectedItemCommand { get; }
+    public IRelayCommand UndoCommand { get; }
+    public IRelayCommand RedoCommand { get; }
     public IRelayCommand<WhiteboardShapeType> AddShapeCommand { get; }
     public IRelayCommand AddRectangleCommand { get; }
     public IRelayCommand AddEllipseCommand { get; }
@@ -198,7 +202,9 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         SelectedToolOption = ToolOptions[0];
         SelectedInteractionOption = InteractionOptions[0];
         ClearCommand = new RelayCommand(_controller.Clear);
-        RemoveSelectedItemCommand = new RelayCommand(_controller.RemoveSelectedItem);
+        RemoveSelectedItemCommand = new RelayCommand(RemoveSelectedItem);
+        UndoCommand = new RelayCommand(Undo, () => CanUndo);
+        RedoCommand = new RelayCommand(Redo, () => CanRedo);
 
         AddShapeCommand = new RelayCommand<WhiteboardShapeType>(type =>
             _controller.AddShape(type, new Size(100, 100), SelectedPenColor.Color, Colors.Transparent, PenThickness));
@@ -221,6 +227,18 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
 
     private void OnSurfacePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(WhiteboardSurface.SelectedShape)) OnPropertyChanged(nameof(IsSelectedShape));
+        if (e.PropertyName == nameof(WhiteboardSurface.CanUndo))
+        {
+            OnPropertyChanged(nameof(CanUndo));
+            UndoCommand.NotifyCanExecuteChanged();
+        }
+        if (e.PropertyName == nameof(WhiteboardSurface.CanRedo))
+        {
+            OnPropertyChanged(nameof(CanRedo));
+            RedoCommand.NotifyCanExecuteChanged();
+        }
+
         if (e.PropertyName == nameof(WhiteboardSurface.SelectedShape) || e.PropertyName == nameof(WhiteboardSurface.SelectedImage))
         {
             UpdateSelectedObjectReferences();
@@ -272,6 +290,9 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsSelectedShape));
     }
 
+    public void RemoveSelectedItem() => _controller.RemoveSelectedItem();
+    public void Undo() => _controller.Undo();
+    public void Redo() => _controller.Redo();
     public void Clear() => _controller.Clear();
     public void EnsureSize(int width, int height) => _controller.EnsureSize(width, height);
     public void BeginStroke(Point point, long pointerId = 0) => _controller.BeginStroke(point, pointerId);

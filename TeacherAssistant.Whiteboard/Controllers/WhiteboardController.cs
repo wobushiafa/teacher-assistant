@@ -80,6 +80,8 @@ public sealed class WhiteboardController : NotifyPropertyChangedObject, IDisposa
         => Surface.AddShape(shapeType, size, strokeColor, fillColor, strokeThickness);
 
     public void RemoveSelectedItem() => Surface.RemoveSelectedItem();
+    public void Undo() => Surface.Undo();
+    public void Redo() => Surface.Redo();
 
     public void BeginStroke(Point point, long pointerId = 0)
     {

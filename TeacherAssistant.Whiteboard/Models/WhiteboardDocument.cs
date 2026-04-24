@@ -132,5 +132,33 @@ public sealed class WhiteboardDocument
         NotifyChanged();
     }
 
+    public int IndexOf(IWhiteboardElement element) => _elements.IndexOf(element);
+
+    public void InsertStroke(int index, StrokeElement stroke)
+    {
+        if (_elements.Contains(stroke)) return;
+        _elements.Insert(Math.Clamp(index, 0, _elements.Count), stroke);
+        
+        // Maintain _strokes order based on _elements order
+        _strokes.Add(stroke);
+        _strokes.Sort((a, b) => _elements.IndexOf(a).CompareTo(_elements.IndexOf(b)));
+        
+        _strokeGrid.Add(stroke);
+        NotifyChanged();
+    }
+
+    public void InsertItem(int index, WhiteboardItemBase item)
+    {
+        if (_elements.Contains(item)) return;
+        _elements.Insert(Math.Clamp(index, 0, _elements.Count), item);
+        
+        // Maintain _items order based on _elements order
+        _items.Add(item);
+        _items.Sort((a, b) => _elements.IndexOf(a).CompareTo(_elements.IndexOf(b)));
+        
+        _itemGrid.Add(item);
+        NotifyChanged();
+    }
+
     private void NotifyChanged() => DocumentChanged?.Invoke();
 }

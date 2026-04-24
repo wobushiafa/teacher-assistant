@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using TeacherAssistant.Whiteboard.Interactions;
 using TeacherAssistant.Whiteboard.Models;
+using TeacherAssistant.Whiteboard.Undo;
 
 namespace TeacherAssistant.Whiteboard.Services;
 
@@ -19,6 +20,11 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private readonly HighlighterCompositor _highlighter = new();
     private readonly SurfaceRenderCoordinator _renderCoordinator = new();
     private readonly TransformInteractionService _transformInteraction;
+    
+    private readonly Stack<IUndoCommand> _undoStack = new();
+    private readonly Stack<IUndoCommand> _redoStack = new();
+    
+    private (Point Center, double ScaleX, double ScaleY, double Rotation)? _initialTransform;
     
     private readonly Dictionary<long, WhiteboardStroke> _activeStrokes = new();
     private readonly Dictionary<long, (Point Pos, Point Trend)> _filters = new();
@@ -40,6 +46,8 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public double? ActiveSnapX => _transformInteraction.ActiveSnapX;
     public double? ActiveSnapY => _transformInteraction.ActiveSnapY;
     public WhiteboardStroke? ActiveStroke => _activeStrokes.Values.FirstOrDefault();
+    public bool CanUndo => _undoStack.Count > 0;
+    public bool CanRedo => _redoStack.Count > 0;
 
     public bool UsePenNibEffect 
     { 
@@ -133,7 +141,8 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         }
 
         // 加入完成列表
-        _document.AddStroke(ConvertToDocumentElement(stroke));
+        var element = ConvertToDocumentElement(stroke);
+        ExecuteCommand(new AddStrokeCommand(_document, element));
 
         // 清理状态
         _activeStrokes.Remove(pointerId);
@@ -207,10 +216,16 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private static Color GetStrokeColor(Color c, WhiteboardTool t) { if (t != WhiteboardTool.Highlighter) return c; return Color.FromArgb((byte)Math.Min((int)c.A, 96), c.R, c.G, c.B); }
     public void RefreshRegion(Rect d) => RasterizeAll();
     public void RenderHighlighterPreview(DrawingContext c, Rect b) => _highlighter.Render(c, b);
-    public void EraseAt(Point p, double r) { var searchRect = new Rect(p.X - r, p.Y - r, r * 2, r * 2); var removedIds = new List<Guid>(); foreach (var s in _document.QueryStrokes(searchRect)) if (IsPointNearStroke(p, s, r)) removedIds.Add(s.Id); if (removedIds.Count > 0) { foreach (var id in removedIds) _document.RemoveElement(id); RasterizeAll(); } }
-    public void Clear() { _document.Clear(); _renderCoordinator.ClearAll(); _highlighter.Reset(); DeselectImage(); NotifySurfaceChanged(); }
+    public void EraseAt(Point p, double r) { var searchRect = new Rect(p.X - r, p.Y - r, r * 2, r * 2); var removed = new List<StrokeElement>(); foreach (var s in _document.QueryStrokes(searchRect)) if (IsPointNearStroke(p, s, r)) removed.Add(s); if (removed.Count > 0) { foreach (var s in removed) ExecuteCommand(new RemoveElementCommand(_document, s)); RasterizeAll(); } }
+    public void Clear() { ExecuteCommand(new ClearCommand(_document)); _renderCoordinator.ClearAll(); _highlighter.Reset(); DeselectImage(); NotifySurfaceChanged(); }
     public bool BeginImageDrag(Point point)
     {
+        var item = _transformInteraction.SelectedItem;
+        if (item != null)
+        {
+            _initialTransform = (item.Center, item.ScaleX, item.ScaleY, item.RotationDegrees);
+        }
+
         var started = _transformInteraction.BeginDrag(point, _transformInteraction.SelectedItem, _document.Items);
         if (!started)
         {
@@ -230,11 +245,24 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void EndImageDrag()
     {
+        var item = _transformInteraction.SelectedItem;
         _transformInteraction.EndDrag();
+        
+        if (item != null && _initialTransform.HasValue)
+        {
+            var initial = _initialTransform.Value;
+            if (item.Center != initial.Center || item.ScaleX != initial.ScaleX || item.ScaleY != initial.ScaleY || item.RotationDegrees != initial.Rotation)
+            {
+                PushCommand(new TransformCommand(item, 
+                    initial.Center, initial.ScaleX, initial.ScaleY, initial.Rotation,
+                    item.Center, item.ScaleX, item.ScaleY, item.RotationDegrees));
+            }
+        }
+        _initialTransform = null;
         NotifySurfaceChanged();
     }
-    public void AddImage(Bitmap b) { var size = _renderCoordinator.PixelSize; var s = Math.Min(Math.Min(size.Width * 0.6 / b.PixelSize.Width, size.Height * 0.6 / b.PixelSize.Height), 1.0); var img = new WhiteboardImageItem(b, new Point(size.Width / 2.0, size.Height / 2.0)); img.SetScale(s, s); img.PropertyChanged += OnObjectPropertyChanged; _document.AddItem(img); _transformInteraction.Select(img); NotifySurfaceChanged(); }
-    public void AddShape(WhiteboardShapeType t, Size sz, Color sc, Color fc, double st) { var size = _renderCoordinator.PixelSize; var sh = new WhiteboardShapeItem(t, new Point(size.Width / 2.0, size.Height / 2.0), sz, sc, fc, st); sh.PropertyChanged += OnObjectPropertyChanged; _document.AddItem(sh); _transformInteraction.Select(sh); NotifySurfaceChanged(); }
+    public void AddImage(Bitmap b) { var size = _renderCoordinator.PixelSize; var s = Math.Min(Math.Min(size.Width * 0.6 / b.PixelSize.Width, size.Height * 0.6 / b.PixelSize.Height), 1.0); var img = new WhiteboardImageItem(b, new Point(size.Width / 2.0, size.Height / 2.0)); img.SetScale(s, s); img.PropertyChanged += OnObjectPropertyChanged; ExecuteCommand(new AddItemCommand(_document, img)); _transformInteraction.Select(img); NotifySurfaceChanged(); }
+    public void AddShape(WhiteboardShapeType t, Size sz, Color sc, Color fc, double st) { var size = _renderCoordinator.PixelSize; var sh = new WhiteboardShapeItem(t, new Point(size.Width / 2.0, size.Height / 2.0), sz, sc, fc, st); sh.PropertyChanged += OnObjectPropertyChanged; ExecuteCommand(new AddItemCommand(_document, sh)); _transformInteraction.Select(sh); NotifySurfaceChanged(); }
     private void OnObjectPropertyChanged(object? s, PropertyChangedEventArgs e)
     {
         if (s is WhiteboardItemBase i &&
@@ -298,13 +326,48 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         }
 
         removed.PropertyChanged -= OnObjectPropertyChanged;
-        if (removed is IDisposable d)
-        {
-            d.Dispose();
-        }
-        _document.RemoveElement(removed.Id);
+        ExecuteCommand(new RemoveElementCommand(_document, removed));
 
         NotifySurfaceChanged();
+    }
+
+    private void ExecuteCommand(IUndoCommand command)
+    {
+        command.Execute();
+        PushCommand(command);
+    }
+
+    private void PushCommand(IUndoCommand command)
+    {
+        _undoStack.Push(command);
+        _redoStack.Clear();
+        NotifyUndoRedoChanged();
+    }
+
+    public void Undo()
+    {
+        if (_undoStack.Count == 0) return;
+        var command = _undoStack.Pop();
+        command.Undo();
+        _redoStack.Push(command);
+        RasterizeAll();
+        NotifyUndoRedoChanged();
+    }
+
+    public void Redo()
+    {
+        if (_redoStack.Count == 0) return;
+        var command = _redoStack.Pop();
+        command.Redo();
+        _undoStack.Push(command);
+        RasterizeAll();
+        NotifyUndoRedoChanged();
+    }
+
+    private void NotifyUndoRedoChanged()
+    {
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
     }
 
     public void DeselectImage()

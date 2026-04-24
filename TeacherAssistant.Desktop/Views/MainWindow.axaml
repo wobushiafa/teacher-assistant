@@ -65,7 +65,11 @@
                     <CheckBox Content="贝塞尔平滑" IsChecked="{Binding Whiteboard.UseBezierSmoothing}" VerticalAlignment="Center" />
                 </StackPanel>
 
-                <Button Grid.Column="6" HorizontalAlignment="Right" Content="清空白板" Padding="14,8" Command="{Binding Whiteboard.ClearCommand}" />
+                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <Button Content="撤销" Padding="14,8" Command="{Binding Whiteboard.UndoCommand}" ToolTip.Tip="Ctrl+Z" />
+                    <Button Content="重做" Padding="14,8" Command="{Binding Whiteboard.RedoCommand}" ToolTip.Tip="Ctrl+Y" />
+                    <Button Content="清空白板" Padding="14,8" Command="{Binding Whiteboard.ClearCommand}" Margin="12,0,0,0" />
+                </StackPanel>
                 </Grid>
             </Border>
         </Border>

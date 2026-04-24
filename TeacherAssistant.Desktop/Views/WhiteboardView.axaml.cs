@@ -148,13 +148,25 @@ public partial class WhiteboardView : UserControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Key == Key.Delete || (e.Key == Key.Back && ViewModel?.SelectedInteractionMode == WhiteboardInteractionMode.Mouse))
+        if (ViewModel == null) return;
+
+        if (e.Key == Key.Delete || (e.Key == Key.Back && ViewModel.SelectedInteractionMode == WhiteboardInteractionMode.Mouse))
         {
-            if (ViewModel?.RemoveSelectedItemCommand.CanExecute(null) == true)
+            if (ViewModel.RemoveSelectedItemCommand.CanExecute(null))
             {
                 ViewModel.RemoveSelectedItemCommand.Execute(null);
                 e.Handled = true;
             }
+        }
+        else if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (ViewModel.UndoCommand.CanExecute(null)) ViewModel.UndoCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Y && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (ViewModel.RedoCommand.CanExecute(null)) ViewModel.RedoCommand.Execute(null);
+            e.Handled = true;
         }
     }
 
