@@ -52,36 +52,196 @@ public sealed class WhiteboardShapeItem : WhiteboardItemBase
             var scaledHeight = BaseSize.Height * ScaleY;
             var halfWidth = scaledWidth / 2.0;
             var halfHeight = scaledHeight / 2.0;
-            var rect = new Rect(-halfWidth, -halfHeight, scaledWidth, scaledHeight);
+            
             var fill = new SolidColorBrush(FillColor);
             var pen = new Pen(new SolidColorBrush(StrokeColor), StrokeThickness);
 
-            switch (ShapeType)
+            if (ShapeType == WhiteboardShapeType.Ellipse)
             {
-                case WhiteboardShapeType.Ellipse:
-                    context.DrawEllipse(fill, pen, rect);
-                    break;
-                case WhiteboardShapeType.Rectangle:
-                    context.DrawRectangle(fill, pen, rect);
-                    break;
-                default:
+                context.DrawEllipse(fill, pen, new Rect(-halfWidth, -halfHeight, scaledWidth, scaledHeight));
+                return;
+            }
+            if (ShapeType == WhiteboardShapeType.Rectangle)
+            {
+                context.DrawRectangle(fill, pen, new Rect(-halfWidth, -halfHeight, scaledWidth, scaledHeight));
+                return;
+            }
+
+            if (ShapeType == WhiteboardShapeType.CoordinateSystem)
+            {
+                var strokeBrush = new SolidColorBrush(StrokeColor);
+                var strokePen = new Pen(strokeBrush, StrokeThickness);
+                RenderCoordinateSystem(context, strokePen, strokeBrush, halfWidth, halfHeight);
+                return;
+            }
+
+            var geometry = new StreamGeometry();
+            using (var ctx = geometry.Open())
+            {
+                switch (ShapeType)
                 {
-                    var points = GetNormalizedPoints(ShapeType);
-                    var geometry = new StreamGeometry();
-                    using (var ctx = geometry.Open())
-                    {
+                    case WhiteboardShapeType.Heart: RenderHeart(ctx, halfWidth, halfHeight); break;
+                    case WhiteboardShapeType.Cloud: RenderCloud(ctx, halfWidth, halfHeight); break;
+                    case WhiteboardShapeType.Semicircle: RenderSemicircle(ctx, halfWidth, halfHeight); break;
+                    case WhiteboardShapeType.Sector: RenderSector(ctx, halfWidth, halfHeight); break;
+                    case WhiteboardShapeType.Cylinder: RenderCylinder(ctx, halfWidth, halfHeight); break;
+                    case WhiteboardShapeType.Cube: RenderCube(ctx, halfWidth, halfHeight); break;
+                    case WhiteboardShapeType.Cone: RenderCone(ctx, halfWidth, halfHeight); break;
+                    default:
+                        var points = GetNormalizedPoints(ShapeType);
                         ctx.BeginFigure(new Point(points[0].X * halfWidth, points[0].Y * halfHeight), true);
                         for (int i = 1; i < points.Length; i++)
                         {
                             ctx.LineTo(new Point(points[i].X * halfWidth, points[i].Y * halfHeight));
                         }
                         ctx.EndFigure(true);
-                    }
-                    context.DrawGeometry(fill, pen, geometry);
-                    break;
+                        break;
                 }
             }
+            context.DrawGeometry(fill, pen, geometry);
         }
+    }
+
+    private static void RenderHeart(StreamGeometryContext ctx, double w, double h)
+    {
+        ctx.BeginFigure(new Point(0, h * 0.8), true);
+        ctx.CubicBezierTo(new Point(-w * 1.5, -h * 0.6), new Point(-w * 0.6, -h * 1.5), new Point(0, -h * 0.4));
+        ctx.CubicBezierTo(new Point(w * 0.6, -h * 1.5), new Point(w * 1.5, -h * 0.6), new Point(0, h * 0.8));
+        ctx.EndFigure(true);
+    }
+
+    private static void RenderCloud(StreamGeometryContext ctx, double w, double h)
+    {
+        ctx.BeginFigure(new Point(-w * 0.6, h * 0.4), true);
+        ctx.ArcTo(new Point(-w * 0.6, -h * 0.4), new Size(w * 0.4, h * 0.4), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(0, -h * 0.6), new Size(w * 0.5, h * 0.5), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(w * 0.6, -h * 0.4), new Size(w * 0.4, h * 0.4), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(w * 0.6, h * 0.4), new Size(w * 0.4, h * 0.4), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(-w * 0.6, h * 0.4), new Size(w * 0.8, h * 0.4), 0, false, SweepDirection.Clockwise);
+        ctx.EndFigure(true);
+    }
+
+    private static void RenderSemicircle(StreamGeometryContext ctx, double w, double h)
+    {
+        ctx.BeginFigure(new Point(-w, 0), true);
+        ctx.ArcTo(new Point(w, 0), new Size(w, h), 0, false, SweepDirection.Clockwise);
+        ctx.LineTo(new Point(-w, 0));
+        ctx.EndFigure(true);
+    }
+
+    private static void RenderSector(StreamGeometryContext ctx, double w, double h)
+    {
+        ctx.BeginFigure(new Point(0, 0), true);
+        ctx.LineTo(new Point(w, 0));
+        ctx.ArcTo(new Point(0, -h), new Size(w, h), 0, false, SweepDirection.CounterClockwise);
+        ctx.LineTo(new Point(0, 0));
+        ctx.EndFigure(true);
+    }
+
+    private static void RenderCoordinateSystem(DrawingContext context, Pen pen, IBrush fill, double w, double h)
+    {
+        double arrowLen = 15;
+        double arrowWing = 6;
+
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            // X Axis main line
+            ctx.BeginFigure(new Point(-w, 0), false);
+            ctx.LineTo(new Point(w, 0));
+            ctx.EndFigure(false);
+
+            // Y Axis main line
+            ctx.BeginFigure(new Point(0, h), false);
+            ctx.LineTo(new Point(0, -h));
+            ctx.EndFigure(false);
+        }
+        context.DrawGeometry(null, pen, geometry);
+
+        var arrowGeometry = new StreamGeometry();
+        using (var ctx = arrowGeometry.Open())
+        {
+            // X Axis Arrowhead (Closed triangle)
+            ctx.BeginFigure(new Point(w, 0), true);
+            ctx.LineTo(new Point(w - arrowLen, -arrowWing));
+            ctx.LineTo(new Point(w - arrowLen, arrowWing));
+            ctx.EndFigure(true);
+
+            // Y Axis Arrowhead (Closed triangle)
+            ctx.BeginFigure(new Point(0, -h), true);
+            ctx.LineTo(new Point(-arrowWing, -h + arrowLen));
+            ctx.LineTo(new Point(arrowWing, -h + arrowLen));
+            ctx.EndFigure(true);
+        }
+        // Fill the arrows with the stroke brush
+        context.DrawGeometry(fill, pen, arrowGeometry);
+    }
+
+    private static void RenderCylinder(StreamGeometryContext ctx, double w, double h)
+    {
+        double rh = h * 0.2; // ellipse height
+        // Bottom ellipse
+        ctx.BeginFigure(new Point(-w, h - rh), true);
+        ctx.ArcTo(new Point(w, h - rh), new Size(w, rh), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(-w, h - rh), new Size(w, rh), 0, false, SweepDirection.Clockwise);
+        ctx.EndFigure(true);
+
+        // Sides
+        ctx.BeginFigure(new Point(-w, h - rh), false);
+        ctx.LineTo(new Point(-w, -h + rh));
+        ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(w, h - rh), false);
+        ctx.LineTo(new Point(w, -h + rh));
+        ctx.EndFigure(false);
+
+        // Top ellipse
+        ctx.BeginFigure(new Point(-w, -h + rh), true);
+        ctx.ArcTo(new Point(w, -h + rh), new Size(w, rh), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(-w, -h + rh), new Size(w, rh), 0, false, SweepDirection.Clockwise);
+        ctx.EndFigure(true);
+    }
+
+    private static void RenderCube(StreamGeometryContext ctx, double w, double h)
+    {
+        double offset = w * 0.4;
+        double sw = w - offset;
+        double sh = h - offset;
+
+        // Front face
+        ctx.BeginFigure(new Point(-sw, -sh), true);
+        ctx.LineTo(new Point(sw, -sh));
+        ctx.LineTo(new Point(sw, sh));
+        ctx.LineTo(new Point(-sw, sh));
+        ctx.EndFigure(true);
+
+        // Back face (partial)
+        ctx.BeginFigure(new Point(-sw + offset, -sh - offset), true);
+        ctx.LineTo(new Point(sw + offset, -sh - offset));
+        ctx.LineTo(new Point(sw + offset, sh - offset));
+        ctx.LineTo(new Point(-sw + offset, sh - offset));
+        ctx.EndFigure(true);
+
+        // Connecting lines
+        ctx.BeginFigure(new Point(-sw, -sh), false); ctx.LineTo(new Point(-sw + offset, -sh - offset)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(sw, -sh), false); ctx.LineTo(new Point(sw + offset, -sh - offset)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(sw, sh), false); ctx.LineTo(new Point(sw + offset, sh - offset)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(-sw, sh), false); ctx.LineTo(new Point(-sw + offset, sh - offset)); ctx.EndFigure(false);
+    }
+
+    private static void RenderCone(StreamGeometryContext ctx, double w, double h)
+    {
+        double rh = h * 0.2;
+        // Bottom ellipse
+        ctx.BeginFigure(new Point(-w, h - rh), true);
+        ctx.ArcTo(new Point(w, h - rh), new Size(w, rh), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(-w, h - rh), new Size(w, rh), 0, false, SweepDirection.Clockwise);
+        ctx.EndFigure(true);
+
+        // Lines to apex
+        ctx.BeginFigure(new Point(-w, h - rh), false);
+        ctx.LineTo(new Point(0, -h));
+        ctx.LineTo(new Point(w, h - rh));
+        ctx.EndFigure(false);
     }
 
     private static readonly System.Collections.Generic.Dictionary<WhiteboardShapeType, Point[]> _normalizedPointsCache = new();
@@ -100,7 +260,15 @@ public sealed class WhiteboardShapeItem : WhiteboardItemBase
             WhiteboardShapeType.Diamond => [new(0, -1), new(1, 0), new(0, 1), new(-1, 0)],
             WhiteboardShapeType.Pentagon => GetRegularPolygonPoints(5),
             WhiteboardShapeType.Hexagon => GetRegularPolygonPoints(6),
+            WhiteboardShapeType.Octagon => GetRegularPolygonPoints(8),
             WhiteboardShapeType.Star => GetStarPoints(),
+            WhiteboardShapeType.Trapezoid => [new(-0.7, -1), new(0.7, -1), new(1, 1), new(-1, 1)],
+            WhiteboardShapeType.Parallelogram => [new(-0.7, -1), new(1, -1), new(0.7, 1), new(-1, 1)],
+            WhiteboardShapeType.Cross => [
+                new(-0.3, -1), new(0.3, -1), new(0.3, -0.3), new(1, -0.3),
+                new(1, 0.3), new(0.3, 0.3), new(0.3, 1), new(-0.3, 1),
+                new(-0.3, 0.3), new(-1, 0.3), new(-1, -0.3), new(-0.3, -0.3)
+            ],
             WhiteboardShapeType.Arrow => [new(-1, -0.4), new(0.2, -0.4), new(0.2, -1), new(1, 0), new(0.2, 1), new(0.2, 0.4), new(-1, 0.4)],
             _ => [new(-1, -1), new(1, -1), new(1, 1), new(-1, 1)]
         };

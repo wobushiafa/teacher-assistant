@@ -91,7 +91,13 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
         if (tool == WhiteboardTool.LaserPointer)
         {
-            var ls = new LaserStroke(pointerId, thickness);
+            // 确保旧的同 ID 笔迹被标记为完成，防止点连接
+            foreach (var existing in _laserStrokes)
+            {
+                if (existing.PointerId == pointerId) existing.IsFinished = true;
+            }
+
+            var ls = new LaserStroke(pointerId, color, thickness);
             ls.Points.Add(point);
             _laserStrokes.Add(ls);
             StartLaserTimer();
@@ -112,7 +118,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void ContinueStroke(Point rawPoint, long pointerId)
     {
-        var ls = _laserStrokes.FirstOrDefault(x => x.PointerId == pointerId && !x.IsFinished);
+        var ls = _laserStrokes.LastOrDefault(x => x.PointerId == pointerId && !x.IsFinished);
         if (ls != null)
         {
             if (AreClose(ls.Points[^1], rawPoint)) return;
@@ -158,7 +164,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void EndStroke(long pointerId)
     {
-        var ls = _laserStrokes.FirstOrDefault(x => x.PointerId == pointerId && !x.IsFinished);
+        var ls = _laserStrokes.LastOrDefault(x => x.PointerId == pointerId && !x.IsFinished);
         if (ls != null)
         {
             ls.IsFinished = true;
@@ -413,12 +419,18 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     private void OnLaserTimerTick(object? sender, EventArgs e)
     {
+        // 计算每帧淡出量 (假设每帧 30ms)
+        double fadeDuration = _options.LaserPointerFadeDurationSeconds;
+        double frameTime = 0.03; 
+        double baseDecrement = frameTime / Math.Max(fadeDuration, 0.1);
+
         bool changed = false;
         for (int i = _laserStrokes.Count - 1; i >= 0; i--)
         {
             var s = _laserStrokes[i];
-            if (s.IsFinished) s.Opacity -= 0.08;
-            else s.Opacity -= 0.005;
+            // 抬起后加速淡出，书写时保留较长时间
+            if (s.IsFinished) s.Opacity -= baseDecrement * 2.0; 
+            else s.Opacity -= baseDecrement * 0.1;
 
             if (s.Opacity <= 0) _laserStrokes.RemoveAt(i);
             changed = true;

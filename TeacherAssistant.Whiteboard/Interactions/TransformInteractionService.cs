@@ -79,6 +79,7 @@ public sealed class TransformInteractionService
 
         if (_activeMode == WhiteboardImageHitTest.Move)
         {
+            if (_selectedItem.IsPositionLocked) return;
             var targetPos = point - _activeOffset;
             if (_isSnappingEnabled)
             {
@@ -90,6 +91,7 @@ public sealed class TransformInteractionService
 
         if (_activeMode == WhiteboardImageHitTest.RotateCenter)
         {
+            if (_selectedItem.IsPositionLocked) return;
             var startAngle = Math.Atan2(_startPointer.Y - _startCenter.Y, _startPointer.X - _startCenter.X);
             var currentAngle = Math.Atan2(point.Y - _startCenter.Y, point.X - _startCenter.X);
             _selectedItem.SetRotation(_startRotation + (currentAngle - startAngle) * 180.0 / Math.PI);
@@ -192,7 +194,7 @@ public sealed class TransformInteractionService
 
     private void ResizeActiveItem(Point point)
     {
-        if (_selectedItem is null || _selectedItem.IsSizeLocked)
+        if (_selectedItem is null || _selectedItem.IsSizeLocked || _selectedItem.IsPositionLocked)
         {
             return;
         }

@@ -23,6 +23,9 @@ public sealed class WhiteboardOptions
     public Color DefaultBackground { get; set; } = Colors.White;
     public Color DefaultStrokeColor { get; set; } = Colors.Black;
     public double DefaultStrokeThickness { get; set; } = 3.0;
+    
+    // --- 激光笔配置 ---
+    public double LaserPointerFadeDurationSeconds { get; set; } = 1.5;
 
     public static WhiteboardOptions Default { get; } = new();
 }

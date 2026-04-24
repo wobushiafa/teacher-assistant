@@ -14,62 +14,76 @@
         MinHeight="600">
     <Grid RowDefinitions="Auto,*">
         <Border Grid.Row="0" Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
-            <Border Padding="12,10">
-                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*">
-                <TextBlock Grid.Column="0" Text="教师助手" FontWeight="Bold" FontSize="18" VerticalAlignment="Center" Margin="0,0,20,0" />
+            <Border Padding="12,8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <!-- 左侧：品牌与模式 -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="12">
+                        <TextBlock Text="教师助手" FontWeight="Bold" FontSize="18" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox Width="110" ItemsSource="{Binding Whiteboard.InteractionOptions}" SelectedItem="{Binding Whiteboard.SelectedInteractionOption}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WhiteboardInteractionOption">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="交互模式" VerticalAlignment="Center" />
-                    <ComboBox Width="120" ItemsSource="{Binding Whiteboard.InteractionOptions}" SelectedItem="{Binding Whiteboard.SelectedInteractionOption}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:WhiteboardInteractionOption">
-                                <TextBlock Text="{Binding Name}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
+                    <!-- 中间：核心工具栏 -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                        <!-- 工具组 -->
+                        <ComboBox Width="100" ItemsSource="{Binding Whiteboard.ToolOptions}" SelectedItem="{Binding Whiteboard.SelectedToolOption}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WhiteboardToolOption">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        
+                        <Separator Width="1" Height="20" Background="#E5E7EB" Margin="4,0" />
+                        
+                        <!-- 颜色 -->
+                        <ComboBox Width="100" ItemsSource="{Binding Whiteboard.PenColorOptions}" SelectedItem="{Binding Whiteboard.SelectedPenColor}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PenColorOption">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="{Binding Brush}" BorderBrush="#D1D5DB" BorderThickness="1" />
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontSize="12" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        
+                        <!-- 粗细 -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Slider Width="80" Minimum="1" Maximum="12" Value="{Binding Whiteboard.PenThickness}" />
+                            <TextBlock Text="{Binding Whiteboard.PenThickness, StringFormat={}{0:F0}}" Width="15" VerticalAlignment="Center" FontSize="11" />
+                        </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0,0,0">
-                    <TextBlock Text="工具" VerticalAlignment="Center" />
-                    <ComboBox Width="120" ItemsSource="{Binding Whiteboard.ToolOptions}" SelectedItem="{Binding Whiteboard.SelectedToolOption}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:WhiteboardToolOption">
-                                <TextBlock Text="{Binding Name}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
+                        <!-- 激光笔专项设置 -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding Whiteboard.IsLaserPointerSelected}">
+                            <Separator Width="1" Height="20" Background="#E5E7EB" Margin="4,0" />
+                            <TextBlock Text="激光时长" VerticalAlignment="Center" FontSize="11" Foreground="#666666" />
+                            <Slider Width="70" Minimum="0.5" Maximum="5.0" Value="{Binding Whiteboard.LaserPointerFadeDuration}" />
+                            <TextBlock Text="{Binding Whiteboard.LaserPointerFadeDuration, StringFormat={}{0:F1}s}" Width="30" VerticalAlignment="Center" FontSize="11" />
+                        </StackPanel>
 
-                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0,0,0">
-                    <TextBlock Text="颜色" VerticalAlignment="Center" />
-                    <ComboBox Width="120" ItemsSource="{Binding Whiteboard.PenColorOptions}" SelectedItem="{Binding Whiteboard.SelectedPenColor}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PenColorOption">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Brush}" BorderBrush="#D1D5DB" BorderThickness="1" />
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
+                        <Separator Width="1" Height="20" Background="#E5E7EB" Margin="4,0" />
+                        
+                        <!-- 开关组 -->
+                        <CheckBox Content="笔锋" IsChecked="{Binding Whiteboard.UsePenNibEffect}" FontSize="12" VerticalAlignment="Center" />
+                        <CheckBox Content="平滑" IsChecked="{Binding Whiteboard.UseBezierSmoothing}" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
 
-                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="20,0,0,0">
-                    <TextBlock Text="粗细" VerticalAlignment="Center" />
-                    <Slider Width="140" Minimum="1" Maximum="12" Value="{Binding Whiteboard.PenThickness}" />
-                    <TextBlock Text="{Binding Whiteboard.PenThickness, StringFormat={}{0:F1}}" Width="40" VerticalAlignment="Center" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="20,0,0,0">
-                    <CheckBox Content="笔锋" IsChecked="{Binding Whiteboard.UsePenNibEffect}" VerticalAlignment="Center" />
-                    <CheckBox Content="贝塞尔平滑" IsChecked="{Binding Whiteboard.UseBezierSmoothing}" VerticalAlignment="Center" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                    <Button Content="撤销" Padding="14,8" Command="{Binding Whiteboard.UndoCommand}" ToolTip.Tip="Ctrl+Z" />
-                    <Button Content="重做" Padding="14,8" Command="{Binding Whiteboard.RedoCommand}" ToolTip.Tip="Ctrl+Y" />
-                    <Button Content="清空白板" Padding="14,8" Command="{Binding Whiteboard.ClearCommand}" Margin="12,0,0,0" />
-                </StackPanel>
+                    <!-- 右侧：撤销/重做/清空 -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Button Content="⟲" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                Command="{Binding Whiteboard.UndoCommand}" ToolTip.Tip="撤销 (Ctrl+Z)" />
+                        <Button Content="⟳" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                Command="{Binding Whiteboard.RedoCommand}" ToolTip.Tip="重做 (Ctrl+Y)" />
+                        <Button Content="清空" Padding="12,6" VerticalAlignment="Center" Margin="6,0,0,0"
+                                Command="{Binding Whiteboard.ClearCommand}" 
+                                Background="#FEE2E2" Foreground="#DC2626" />
+                    </StackPanel>
                 </Grid>
             </Border>
         </Border>
@@ -87,17 +101,35 @@
 
                         <StackPanel Spacing="8">
                             <TextBlock Text="插入形状" FontWeight="SemiBold" />
-                            <UniformGrid Columns="2" Rows="4">
+                            <WrapPanel>
                                 <Button Margin="2" Content="矩形" Command="{Binding Whiteboard.AddRectangleCommand}" />
                                 <Button Margin="2" Content="椭圆" Command="{Binding Whiteboard.AddEllipseCommand}" />
                                 <Button Margin="2" Content="三角形" Command="{Binding Whiteboard.AddTriangleCommand}" />
                                 <Button Margin="2" Content="星形" Command="{Binding Whiteboard.AddStarCommand}" />
-                                <Button Margin="2" Content="直角三角" Command="{Binding Whiteboard.AddRightTriangleCommand}" />
+                                <Button Margin="2" Content="直角" Command="{Binding Whiteboard.AddRightTriangleCommand}" />
                                 <Button Margin="2" Content="菱形" Command="{Binding Whiteboard.AddDiamondCommand}" />
                                 <Button Margin="2" Content="五边形" Command="{Binding Whiteboard.AddPentagonCommand}" />
                                 <Button Margin="2" Content="六边形" Command="{Binding Whiteboard.AddHexagonCommand}" />
-                            </UniformGrid>
-                            <Button Content="箭头" Command="{Binding Whiteboard.AddArrowCommand}" />
+                                <Button Margin="2" Content="八边形" Command="{Binding Whiteboard.AddOctagonCommand}" />
+                                <Button Margin="2" Content="梯形" Command="{Binding Whiteboard.AddTrapezoidCommand}" />
+                                <Button Margin="2" Content="平行四边" Command="{Binding Whiteboard.AddParallelogramCommand}" />
+                                <Button Margin="2" Content="十字" Command="{Binding Whiteboard.AddCrossCommand}" />
+                                <Button Margin="2" Content="心形" Command="{Binding Whiteboard.AddHeartCommand}" />
+                                <Button Margin="2" Content="云朵" Command="{Binding Whiteboard.AddCloudCommand}" />
+                                <Button Margin="2" Content="箭头" Command="{Binding Whiteboard.AddArrowCommand}" />
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="数学几何" FontWeight="SemiBold" />
+                            <WrapPanel>
+                                <Button Margin="2" Content="坐标系" Command="{Binding Whiteboard.AddCoordinateSystemCommand}" />
+                                <Button Margin="2" Content="半圆" Command="{Binding Whiteboard.AddSemicircleCommand}" />
+                                <Button Margin="2" Content="扇形" Command="{Binding Whiteboard.AddSectorCommand}" />
+                                <Button Margin="2" Content="正方体" Command="{Binding Whiteboard.AddCubeCommand}" />
+                                <Button Margin="2" Content="圆柱" Command="{Binding Whiteboard.AddCylinderCommand}" />
+                                <Button Margin="2" Content="圆锥" Command="{Binding Whiteboard.AddConeCommand}" />
+                            </WrapPanel>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -116,10 +148,14 @@
 
                         <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="X坐标" FontSize="11" Foreground="#666666" />
-                            <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding Whiteboard.SelectedObjectX, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Grid.Row="1" Grid.Column="0" 
+                                     Text="{Binding Whiteboard.SelectedObjectX, UpdateSourceTrigger=PropertyChanged}" 
+                                     IsReadOnly="{Binding Whiteboard.SelectedObjectIsPositionLocked}" />
 
                             <TextBlock Grid.Row="0" Grid.Column="2" Text="Y坐标" FontSize="11" Foreground="#666666" />
-                            <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding Whiteboard.SelectedObjectY, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Grid.Row="1" Grid.Column="2" 
+                                     Text="{Binding Whiteboard.SelectedObjectY, UpdateSourceTrigger=PropertyChanged}" 
+                                     IsReadOnly="{Binding Whiteboard.SelectedObjectIsPositionLocked}" />
                         </Grid>
 
                         <Grid ColumnDefinitions="*,8,*,32" RowDefinitions="Auto,Auto">
@@ -139,6 +175,10 @@
                                 <TextBlock Text="🔒" VerticalAlignment="Center" HorizontalAlignment="Center" />
                             </ToggleButton>
                         </Grid>
+
+                        <CheckBox Content="锁定位置 (不可移动/旋转/缩放)" 
+                                  IsChecked="{Binding Whiteboard.SelectedObjectIsPositionLocked}" 
+                                  Margin="0,4,0,0" FontSize="12" />
 
                         <StackPanel Spacing="4">
                             <TextBlock Text="旋转角度" FontSize="11" Foreground="#666666" />

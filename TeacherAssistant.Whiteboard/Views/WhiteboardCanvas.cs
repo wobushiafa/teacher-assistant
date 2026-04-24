@@ -111,7 +111,7 @@ public sealed class WhiteboardCanvas : Control
             }
 
             // Outer glow
-            var glowBrush = new SolidColorBrush(Colors.Red, 0.4 * stroke.Opacity);
+            var glowBrush = new SolidColorBrush(stroke.Color, 0.4 * stroke.Opacity);
             context.DrawGeometry(null, new Pen(glowBrush, stroke.Thickness * 2.5, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), geometry);
             
             // Core
@@ -120,7 +120,7 @@ public sealed class WhiteboardCanvas : Control
             
             // Tip dot
             var tip = stroke.Points[^1];
-            context.DrawEllipse(new SolidColorBrush(Colors.Red, 0.8 * stroke.Opacity), null, new Rect(tip.X - stroke.Thickness, tip.Y - stroke.Thickness, stroke.Thickness * 2, stroke.Thickness * 2));
+            context.DrawEllipse(new SolidColorBrush(stroke.Color, 0.8 * stroke.Opacity), null, new Rect(tip.X - stroke.Thickness, tip.Y - stroke.Thickness, stroke.Thickness * 2, stroke.Thickness * 2));
             context.DrawEllipse(new SolidColorBrush(Colors.White, 0.9 * stroke.Opacity), null, new Rect(tip.X - stroke.Thickness * 0.5, tip.Y - stroke.Thickness * 0.5, stroke.Thickness, stroke.Thickness));
         }
     }

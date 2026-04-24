@@ -11,6 +11,7 @@ public abstract class WhiteboardItemBase : NotifyPropertyChangedObject, IWhitebo
     private double _scaleY = 1;
     private double _rotationDegrees = 0;
     private bool _isSizeLocked;
+    private bool _isPositionLocked;
 
     protected WhiteboardItemBase(Point center)
     {
@@ -70,6 +71,12 @@ public abstract class WhiteboardItemBase : NotifyPropertyChangedObject, IWhitebo
     {
         get => _isSizeLocked;
         set => SetProperty(ref _isSizeLocked, value);
+    }
+
+    public bool IsPositionLocked
+    {
+        get => _isPositionLocked;
+        set => SetProperty(ref _isPositionLocked, value);
     }
 
     public double Width

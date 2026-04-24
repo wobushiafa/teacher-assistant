@@ -172,7 +172,11 @@ public partial class WhiteboardView : UserControl
 
     private void UpdateCursor(Point point)
     {
-        if (ViewModel is null || ViewModel.SelectedInteractionMode != WhiteboardInteractionMode.Mouse || _activeDrawingPointers.Count > 0) return;
+        if (ViewModel is null || ViewModel.SelectedInteractionMode != WhiteboardInteractionMode.Mouse || _activeDrawingPointers.Count > 0)
+        {
+            Cursor = null;
+            return;
+        }
 
         var (hit, rotation) = ViewModel.Surface.GetHitInfo(point);
         Cursor = hit switch

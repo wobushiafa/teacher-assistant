@@ -117,9 +117,31 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public bool SelectedObjectIsPositionLocked
+    {
+        get => _selectedObject?.IsPositionLocked ?? false;
+        set
+        {
+            if (_selectedObject is null) return;
+            _selectedObject.IsPositionLocked = value;
+            RaiseSelectedObjectPropertiesChanged();
+        }
+    }
+
     public bool IsSelectedShape => SelectedShape is not null;
     public bool CanUndo => _controller.Surface.CanUndo;
     public bool CanRedo => _controller.Surface.CanRedo;
+    public bool IsLaserPointerSelected => SelectedToolOption?.Tool == WhiteboardTool.LaserPointer;
+
+    public double LaserPointerFadeDuration
+    {
+        get => _controller.Surface.Options.LaserPointerFadeDurationSeconds;
+        set
+        {
+            _controller.Surface.Options.LaserPointerFadeDurationSeconds = value;
+            OnPropertyChanged();
+        }
+    }
 
     public IReadOnlyList<WhiteboardInteractionOption> InteractionOptions { get; } =
     [
@@ -165,7 +187,8 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _selectedToolOption, value))
             {
-                SelectedTool = value.Tool;
+                _controller.SelectedTool = value.Tool;
+                OnPropertyChanged(nameof(IsLaserPointerSelected));
             }
         }
     }
@@ -196,6 +219,18 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
     public IRelayCommand AddPentagonCommand { get; }
     public IRelayCommand AddHexagonCommand { get; }
     public IRelayCommand AddArrowCommand { get; }
+    public IRelayCommand AddOctagonCommand { get; }
+    public IRelayCommand AddTrapezoidCommand { get; }
+    public IRelayCommand AddParallelogramCommand { get; }
+    public IRelayCommand AddCrossCommand { get; }
+    public IRelayCommand AddHeartCommand { get; }
+    public IRelayCommand AddCloudCommand { get; }
+    public IRelayCommand AddSemicircleCommand { get; }
+    public IRelayCommand AddSectorCommand { get; }
+    public IRelayCommand AddCoordinateSystemCommand { get; }
+    public IRelayCommand AddCylinderCommand { get; }
+    public IRelayCommand AddCubeCommand { get; }
+    public IRelayCommand AddConeCommand { get; }
 
     public WhiteboardViewModel()
     {
@@ -219,6 +254,18 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         AddPentagonCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Pentagon));
         AddHexagonCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Hexagon));
         AddArrowCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Arrow));
+        AddOctagonCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Octagon));
+        AddTrapezoidCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Trapezoid));
+        AddParallelogramCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Parallelogram));
+        AddCrossCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Cross));
+        AddHeartCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Heart));
+        AddCloudCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Cloud));
+        AddSemicircleCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Semicircle));
+        AddSectorCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Sector));
+        AddCoordinateSystemCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.CoordinateSystem));
+        AddCylinderCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Cylinder));
+        AddCubeCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Cube));
+        AddConeCommand = new RelayCommand(() => AddShapeCommand.Execute(WhiteboardShapeType.Cone));
 
         _controller.UsePenNibEffect = UsePenNibEffect;
         _controller.UseBezierSmoothing = UseBezierSmoothing;
