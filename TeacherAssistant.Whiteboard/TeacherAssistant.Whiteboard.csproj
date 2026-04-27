@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsTrimmable>true</IsTrimmable>
   </PropertyGroup>
 
   <ItemGroup>

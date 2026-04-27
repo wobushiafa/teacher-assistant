@@ -204,28 +204,31 @@ public sealed class WhiteboardShapeItem : WhiteboardItemBase
     private static void RenderCube(StreamGeometryContext ctx, double w, double h)
     {
         double offset = w * 0.4;
-        double sw = w - offset;
-        double sh = h - offset;
+        double sw = w * 0.8;
+        double sh = h * 0.8;
+        
+        double dx = -offset / 2.0;
+        double dy = offset / 2.0;
 
         // Front face
-        ctx.BeginFigure(new Point(-sw, -sh), true);
-        ctx.LineTo(new Point(sw, -sh));
-        ctx.LineTo(new Point(sw, sh));
-        ctx.LineTo(new Point(-sw, sh));
+        ctx.BeginFigure(new Point(-sw + dx, -sh + dy), true);
+        ctx.LineTo(new Point(sw + dx, -sh + dy));
+        ctx.LineTo(new Point(sw + dx, sh + dy));
+        ctx.LineTo(new Point(-sw + dx, sh + dy));
         ctx.EndFigure(true);
 
         // Back face (partial)
-        ctx.BeginFigure(new Point(-sw + offset, -sh - offset), true);
-        ctx.LineTo(new Point(sw + offset, -sh - offset));
-        ctx.LineTo(new Point(sw + offset, sh - offset));
-        ctx.LineTo(new Point(-sw + offset, sh - offset));
+        ctx.BeginFigure(new Point(-sw + offset + dx, -sh - offset + dy), true);
+        ctx.LineTo(new Point(sw + offset + dx, -sh - offset + dy));
+        ctx.LineTo(new Point(sw + offset + dx, sh - offset + dy));
+        ctx.LineTo(new Point(-sw + offset + dx, sh - offset + dy));
         ctx.EndFigure(true);
 
         // Connecting lines
-        ctx.BeginFigure(new Point(-sw, -sh), false); ctx.LineTo(new Point(-sw + offset, -sh - offset)); ctx.EndFigure(false);
-        ctx.BeginFigure(new Point(sw, -sh), false); ctx.LineTo(new Point(sw + offset, -sh - offset)); ctx.EndFigure(false);
-        ctx.BeginFigure(new Point(sw, sh), false); ctx.LineTo(new Point(sw + offset, sh - offset)); ctx.EndFigure(false);
-        ctx.BeginFigure(new Point(-sw, sh), false); ctx.LineTo(new Point(-sw + offset, sh - offset)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(-sw + dx, -sh + dy), false); ctx.LineTo(new Point(-sw + offset + dx, -sh - offset + dy)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(sw + dx, -sh + dy), false); ctx.LineTo(new Point(sw + offset + dx, -sh - offset + dy)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(sw + dx, sh + dy), false); ctx.LineTo(new Point(sw + offset + dx, sh - offset + dy)); ctx.EndFigure(false);
+        ctx.BeginFigure(new Point(-sw + dx, sh + dy), false); ctx.LineTo(new Point(-sw + offset + dx, sh - offset + dy)); ctx.EndFigure(false);
     }
 
     private static void RenderCone(StreamGeometryContext ctx, double w, double h)

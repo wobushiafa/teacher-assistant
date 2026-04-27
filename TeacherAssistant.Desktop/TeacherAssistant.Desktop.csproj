@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,6 +6,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' != 'Debug'">
+    <PublishAot>true</PublishAot>
+    <TrimMode>link</TrimMode>
+    <IsTrimmable>true</IsTrimmable>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
   </PropertyGroup>
 
   <ItemGroup>
