@@ -30,6 +30,8 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     
     private readonly List<LaserStroke> _laserStrokes = new();
     private DispatcherTimer? _laserTimer;
+    private DispatcherTimer? _eraseRenderTimer;
+    private bool _eraseRenderPending;
     
     private readonly Dictionary<long, WhiteboardStroke> _activeStrokes = new();
     private readonly Dictionary<long, (Point Pos, Point Trend)> _filters = new();
@@ -220,6 +222,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public void RasterizeAll()
     {
         _renderCoordinator.RasterizeAll(_document, ConvertToLegacyStroke, _useBezierSmoothing, _usePenNibEffect, _highlighter);
+        _eraseRenderPending = false;
         NotifySurfaceChanged();
     }
 
@@ -255,7 +258,30 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private static Color GetStrokeColor(Color c, WhiteboardTool t) { if (t != WhiteboardTool.Highlighter) return c; return Color.FromArgb((byte)Math.Min((int)c.A, 96), c.R, c.G, c.B); }
     public void RefreshRegion(Rect d) => RasterizeAll();
     public void RenderHighlighterPreview(DrawingContext c, Rect b) => _highlighter.Render(c, b);
-    public void EraseAt(Point p, double r) { var searchRect = new Rect(p.X - r, p.Y - r, r * 2, r * 2); var removed = new List<StrokeElement>(); foreach (var s in _document.QueryStrokes(searchRect)) if (IsPointNearStroke(p, s, r)) removed.Add(s); if (removed.Count > 0) { foreach (var s in removed) ExecuteCommand(new RemoveElementCommand(_document, s)); RasterizeAll(); } }
+    public void EraseAt(Point p, double r)
+    {
+        var searchRect = new Rect(p.X - r, p.Y - r, r * 2, r * 2);
+        var removed = new List<StrokeElement>();
+        foreach (var stroke in _document.QueryStrokes(searchRect))
+        {
+            if (IsPointNearStroke(p, stroke, r))
+            {
+                removed.Add(stroke);
+            }
+        }
+
+        if (removed.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var stroke in removed)
+        {
+            ExecuteCommand(new RemoveElementCommand(_document, stroke));
+        }
+
+        ScheduleEraseRender();
+    }
     public void Clear() { ExecuteCommand(new ClearCommand(_document)); _renderCoordinator.ClearAll(); _highlighter.Reset(); DeselectImage(); NotifySurfaceChanged(); }
     public bool BeginImageDrag(Point point)
     {
@@ -409,6 +435,35 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         OnPropertyChanged(nameof(CanRedo));
     }
 
+    private void ScheduleEraseRender()
+    {
+        _eraseRenderPending = true;
+
+        if (_eraseRenderTimer is null)
+        {
+            _eraseRenderTimer = new DispatcherTimer(
+                TimeSpan.FromMilliseconds(16),
+                DispatcherPriority.Render,
+                OnEraseRenderTimerTick);
+        }
+
+        if (!_eraseRenderTimer.IsEnabled)
+        {
+            _eraseRenderTimer.Start();
+        }
+    }
+
+    private void OnEraseRenderTimerTick(object? sender, EventArgs e)
+    {
+        _eraseRenderTimer?.Stop();
+        if (!_eraseRenderPending)
+        {
+            return;
+        }
+
+        RasterizeAll();
+    }
+
     private void StartLaserTimer()
     {
         if (_laserTimer != null && _laserTimer.IsEnabled) return;
@@ -448,6 +503,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void Dispose()
     {
+        _eraseRenderTimer?.Stop();
         _renderCoordinator.Dispose();
         _highlighter.Dispose();
         foreach (var i in _document.Items)

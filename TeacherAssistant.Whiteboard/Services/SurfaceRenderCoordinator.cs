@@ -9,6 +9,7 @@ namespace TeacherAssistant.Whiteboard.Services;
 public sealed class SurfaceRenderCoordinator : IDisposable
 {
     private WriteableBitmap? _bitmap;
+    private WriteableBitmap? _backBitmap;
     private WriteableBitmap? _previewBitmap;
     private PixelSize _pixelSize;
 
@@ -25,9 +26,11 @@ public sealed class SurfaceRenderCoordinator : IDisposable
 
         _pixelSize = new PixelSize(width, height);
         _bitmap?.Dispose();
+        _backBitmap?.Dispose();
         _previewBitmap?.Dispose();
         var dpi = new Vector(96, 96);
         _bitmap = new WriteableBitmap(_pixelSize, dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
+        _backBitmap = new WriteableBitmap(_pixelSize, dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
         _previewBitmap = new WriteableBitmap(_pixelSize, dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
     }
 
@@ -61,12 +64,15 @@ public sealed class SurfaceRenderCoordinator : IDisposable
 
     public void RasterizeAll(WhiteboardDocument document, Func<StrokeElement, WhiteboardStroke> convertToLegacyStroke, bool useBezierSmoothing, bool usePenNibEffect, HighlighterCompositor highlighter)
     {
-        if (_bitmap is null)
+        if (_bitmap is null || _backBitmap is null)
         {
             return;
         }
 
-        WhiteboardStrokeRenderer.Clear(_bitmap, Colors.Transparent);
+        // Render into a persistent back buffer first so large erase operations do
+        // not expose the intermediate "cleared" frame and do not allocate a new
+        // full-size bitmap on every pass.
+        WhiteboardStrokeRenderer.Clear(_backBitmap, Colors.Transparent);
         ClearPreview();
 
         foreach (var element in document.Strokes)
@@ -74,11 +80,13 @@ public sealed class SurfaceRenderCoordinator : IDisposable
             var stroke = convertToLegacyStroke(element);
             if (stroke.Tool != WhiteboardTool.Highlighter)
             {
-                WhiteboardStrokeRenderer.DrawStroke(_bitmap, stroke, useBezierSmoothing, usePenNibEffect);
+                WhiteboardStrokeRenderer.DrawStroke(_backBitmap, stroke, useBezierSmoothing, usePenNibEffect);
             }
         }
 
         highlighter.RebuildFromDocument(document);
+
+        (_bitmap, _backBitmap) = (_backBitmap, _bitmap);
     }
 
     public void ClearAll()
@@ -94,6 +102,7 @@ public sealed class SurfaceRenderCoordinator : IDisposable
     public void Dispose()
     {
         _bitmap?.Dispose();
+        _backBitmap?.Dispose();
         _previewBitmap?.Dispose();
     }
 }
