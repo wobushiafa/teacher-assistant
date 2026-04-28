@@ -36,56 +36,64 @@ public sealed class WhiteboardCanvas : Control
         if (Surface == null) return;
         var opts = Surface.Options;
         var bounds = new Rect(Bounds.Size);
+        var viewportBounds = Surface.GetViewportWorldBounds();
+        var worldToScreen = Surface.GetWorldToScreenMatrix();
         
         // 1. 背景绘制
         context.FillRectangle(new SolidColorBrush(opts.DefaultBackground), bounds);
 
         // 2. 元素绘制 (图片、形状)
-        if (Surface.Items is not null)
+        using (context.PushTransform(worldToScreen))
         {
-            foreach (var item in Surface.Items)
+            if (Surface.Items is not null)
             {
-                item.Render(context);
+                foreach (var item in Surface.Items)
+                {
+                    item.Render(context);
+                }
             }
         }
 
         // 3. 笔迹图层绘制
-        
-        // 底层：已完成笔迹 (主位图)
-        if (Surface.Bitmap is not null)
+        using (context.PushTransform(worldToScreen))
         {
-            context.DrawImage(Surface.Bitmap, new Rect(Surface.Bitmap.Size), bounds);
+            Surface.RenderCommittedInk(context);
         }
 
-        // 顶层：正在书写的实时预览 (全量位图预览，确保丝滑和一致)
         if (Surface.PreviewBitmap is not null)
         {
             context.DrawImage(Surface.PreviewBitmap, new Rect(Surface.PreviewBitmap.Size), bounds);
         }
 
-        Surface.RenderHighlighterPreview(context, bounds);
-
-        // 4. 选中叠加层绘制
-        if (Surface.SelectedItem != null)
+        using (context.PushTransform(worldToScreen))
         {
-            DrawSelectionOverlay(context, Surface.SelectedItem, opts);
-        }
+            Surface.RenderHighlighterPreview(context, viewportBounds);
 
-        // 5. 吸附辅助线绘制
-        var snapPen = new Pen(new SolidColorBrush(opts.SnapLineColor), opts.SnapLineThickness, opts.SnapLineDashStyle);
-        if (Surface.ActiveSnapX.HasValue)
-        {
-            var x = Surface.ActiveSnapX.Value;
-            context.DrawLine(snapPen, new Point(x, 0), new Point(x, Bounds.Height));
-        }
-        if (Surface.ActiveSnapY.HasValue)
-        {
-            var y = Surface.ActiveSnapY.Value;
-            context.DrawLine(snapPen, new Point(0, y), new Point(Bounds.Width, y));
-        }
+            // 4. 选中叠加层绘制
+            if (Surface.SelectedItem != null)
+            {
+                DrawSelectionOverlay(context, Surface.SelectedItem, opts, Surface.Zoom);
+            }
 
-        // 6. 激光笔图层绘制
-        RenderLaserStrokes(context);
+            // 5. 吸附辅助线绘制
+            var snapPen = new Pen(
+                new SolidColorBrush(opts.SnapLineColor),
+                Surface.ScreenLengthToWorld(opts.SnapLineThickness),
+                opts.SnapLineDashStyle);
+            if (Surface.ActiveSnapX.HasValue)
+            {
+                var x = Surface.ActiveSnapX.Value;
+                context.DrawLine(snapPen, new Point(x, viewportBounds.Top), new Point(x, viewportBounds.Bottom));
+            }
+            if (Surface.ActiveSnapY.HasValue)
+            {
+                var y = Surface.ActiveSnapY.Value;
+                context.DrawLine(snapPen, new Point(viewportBounds.Left, y), new Point(viewportBounds.Right, y));
+            }
+
+            // 6. 激光笔图层绘制
+            RenderLaserStrokes(context);
+        }
 
         // 7. 画板边框
         context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.Parse("#22000000")), 1), bounds);
@@ -132,10 +140,10 @@ public sealed class WhiteboardCanvas : Control
         InvalidateVisual();
     }
 
-    private static void DrawSelectionOverlay(DrawingContext context, WhiteboardItemBase item, WhiteboardOptions opts)
+    private static void DrawSelectionOverlay(DrawingContext context, WhiteboardItemBase item, WhiteboardOptions opts, double zoom)
     {
         var corners = item.GetCorners();
-        var pen = new Pen(opts.SelectionStroke, opts.SelectionThickness);
+        var pen = new Pen(opts.SelectionStroke, opts.SelectionThickness / zoom);
         for (var i = 0; i < corners.Length; i++) context.DrawLine(pen, corners[i], corners[(i + 1) % corners.Length]);
 
         var handles = new[] {
@@ -146,17 +154,17 @@ public sealed class WhiteboardCanvas : Control
 
         foreach (var h in handles)
         {
-            DrawHandle(context, item.GetHandlePoint(h), opts.HandleSize, true, opts.HandleFill, opts.SelectionStroke);
+            DrawHandle(context, item.GetHandlePoint(h), opts.HandleSize / zoom, true, opts.HandleFill, opts.SelectionStroke, zoom);
         }
 
-        DrawHandle(context, item.Center, opts.HandleSize, false, opts.RotationHandleFill, opts.SelectionStroke);
+        DrawHandle(context, item.Center, opts.HandleSize / zoom, false, opts.RotationHandleFill, opts.SelectionStroke, zoom);
     }
 
-    private static void DrawHandle(DrawingContext context, Point point, double size, bool square, IBrush fill, IBrush strokeBrush)
+    private static void DrawHandle(DrawingContext context, Point point, double size, bool square, IBrush fill, IBrush strokeBrush, double zoom)
     {
         var half = size / 2.0;
         var rect = new Rect(point.X - half, point.Y - half, size, size);
-        var pen = new Pen(strokeBrush, 1);
+        var pen = new Pen(strokeBrush, 1 / zoom);
         if (square) context.DrawRectangle(fill, pen, rect);
         else context.DrawEllipse(fill, pen, rect);
     }

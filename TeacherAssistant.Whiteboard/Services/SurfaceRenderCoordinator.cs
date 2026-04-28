@@ -8,29 +8,22 @@ namespace TeacherAssistant.Whiteboard.Services;
 
 public sealed class SurfaceRenderCoordinator : IDisposable
 {
-    private WriteableBitmap? _bitmap;
-    private WriteableBitmap? _backBitmap;
     private WriteableBitmap? _previewBitmap;
     private PixelSize _pixelSize;
 
-    public WriteableBitmap? Bitmap => _bitmap;
     public WriteableBitmap? PreviewBitmap => _previewBitmap;
     public PixelSize PixelSize => _pixelSize;
 
     public void EnsureSize(int width, int height)
     {
-        if (width <= 0 || height <= 0 || (_bitmap is not null && _pixelSize.Width == width && _pixelSize.Height == height))
+        if (width <= 0 || height <= 0 || (_previewBitmap is not null && _pixelSize.Width == width && _pixelSize.Height == height))
         {
             return;
         }
 
         _pixelSize = new PixelSize(width, height);
-        _bitmap?.Dispose();
-        _backBitmap?.Dispose();
         _previewBitmap?.Dispose();
         var dpi = new Vector(96, 96);
-        _bitmap = new WriteableBitmap(_pixelSize, dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
-        _backBitmap = new WriteableBitmap(_pixelSize, dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
         _previewBitmap = new WriteableBitmap(_pixelSize, dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
     }
 
@@ -40,16 +33,6 @@ public sealed class SurfaceRenderCoordinator : IDisposable
         {
             WhiteboardStrokeRenderer.Clear(_previewBitmap, Colors.Transparent);
         }
-    }
-
-    public void CommitStroke(WhiteboardStroke stroke, bool useBezierSmoothing, bool usePenNibEffect)
-    {
-        if (_bitmap is null)
-        {
-            return;
-        }
-
-        WhiteboardStrokeRenderer.DrawStroke(_bitmap, stroke, useBezierSmoothing, usePenNibEffect);
     }
 
     public void RenderStrokePreview(WhiteboardStroke stroke, bool useBezierSmoothing, bool usePenNibEffect)
@@ -62,47 +45,19 @@ public sealed class SurfaceRenderCoordinator : IDisposable
         WhiteboardStrokeRenderer.DrawSegment(_previewBitmap, stroke, useBezierSmoothing, usePenNibEffect);
     }
 
-    public void RasterizeAll(WhiteboardDocument document, Func<StrokeElement, WhiteboardStroke> convertToLegacyStroke, bool useBezierSmoothing, bool usePenNibEffect, HighlighterCompositor highlighter)
+    public void RasterizeAll(WhiteboardDocument document, HighlighterCompositor highlighter)
     {
-        if (_bitmap is null || _backBitmap is null)
-        {
-            return;
-        }
-
-        // Render into a persistent back buffer first so large erase operations do
-        // not expose the intermediate "cleared" frame and do not allocate a new
-        // full-size bitmap on every pass.
-        WhiteboardStrokeRenderer.Clear(_backBitmap, Colors.Transparent);
         ClearPreview();
-
-        foreach (var element in document.Strokes)
-        {
-            var stroke = convertToLegacyStroke(element);
-            if (stroke.Tool != WhiteboardTool.Highlighter)
-            {
-                WhiteboardStrokeRenderer.DrawStroke(_backBitmap, stroke, useBezierSmoothing, usePenNibEffect);
-            }
-        }
-
         highlighter.RebuildFromDocument(document);
-
-        (_bitmap, _backBitmap) = (_backBitmap, _bitmap);
     }
 
     public void ClearAll()
     {
-        if (_bitmap is not null)
-        {
-            WhiteboardStrokeRenderer.Clear(_bitmap, Colors.Transparent);
-        }
-
         ClearPreview();
     }
 
     public void Dispose()
     {
-        _bitmap?.Dispose();
-        _backBitmap?.Dispose();
         _previewBitmap?.Dispose();
     }
 }

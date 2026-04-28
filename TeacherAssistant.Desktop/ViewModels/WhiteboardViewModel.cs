@@ -132,6 +132,23 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
     public bool CanUndo => _controller.Surface.CanUndo;
     public bool CanRedo => _controller.Surface.CanRedo;
     public bool IsLaserPointerSelected => SelectedToolOption?.Tool == WhiteboardTool.LaserPointer;
+    public string ZoomDisplay => $"{Surface.Zoom * 100:F0}%";
+    public bool IsInfiniteCanvasEnabled
+    {
+        get => Surface.IsInfiniteCanvasEnabled;
+        set
+        {
+            if (Surface.IsInfiniteCanvasEnabled == value)
+            {
+                return;
+            }
+
+            Surface.IsInfiniteCanvasEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanUseInfiniteCanvasControls));
+        }
+    }
+    public bool CanUseInfiniteCanvasControls => Surface.IsInfiniteCanvasEnabled;
 
     public double LaserPointerFadeDuration
     {
@@ -209,6 +226,8 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
     public IRelayCommand RemoveSelectedItemCommand { get; }
     public IRelayCommand UndoCommand { get; }
     public IRelayCommand RedoCommand { get; }
+    public IRelayCommand ResetViewCommand { get; }
+    public IRelayCommand FitToContentCommand { get; }
     public IRelayCommand<WhiteboardShapeType> AddShapeCommand { get; }
     public IRelayCommand AddRectangleCommand { get; }
     public IRelayCommand AddEllipseCommand { get; }
@@ -241,6 +260,8 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         RemoveSelectedItemCommand = new RelayCommand(RemoveSelectedItem);
         UndoCommand = new RelayCommand(Undo, () => CanUndo);
         RedoCommand = new RelayCommand(Redo, () => CanRedo);
+        ResetViewCommand = new RelayCommand(() => Surface.ResetViewport());
+        FitToContentCommand = new RelayCommand(() => Surface.FitToContent());
 
         AddShapeCommand = new RelayCommand<WhiteboardShapeType>(type =>
             _controller.AddShape(type, new Size(100, 100), SelectedPenColor.Color, Colors.Transparent, PenThickness));
@@ -287,6 +308,17 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
             RedoCommand.NotifyCanExecuteChanged();
         }
 
+        if (e.PropertyName == nameof(WhiteboardSurface.Zoom))
+        {
+            OnPropertyChanged(nameof(ZoomDisplay));
+        }
+
+        if (e.PropertyName == nameof(WhiteboardSurface.IsInfiniteCanvasEnabled))
+        {
+            OnPropertyChanged(nameof(IsInfiniteCanvasEnabled));
+            OnPropertyChanged(nameof(CanUseInfiniteCanvasControls));
+        }
+
         if (e.PropertyName == nameof(WhiteboardSurface.SelectedShape) || e.PropertyName == nameof(WhiteboardSurface.SelectedImage))
         {
             UpdateSelectedObjectReferences();
@@ -294,7 +326,7 @@ public partial class WhiteboardViewModel : ViewModelBase, IDisposable
         }
 
         if (_selectedObject is not null &&
-            (e.PropertyName == nameof(WhiteboardSurface.Bitmap) ||
+            (string.IsNullOrEmpty(e.PropertyName) ||
              e.PropertyName == nameof(WhiteboardSurface.PreviewBitmap)))
         {
             RaiseSelectedObjectPropertiesChanged();

@@ -72,10 +72,17 @@
                         <!-- 开关组 -->
                         <CheckBox Content="笔锋" IsChecked="{Binding Whiteboard.UsePenNibEffect}" FontSize="12" VerticalAlignment="Center" />
                         <CheckBox Content="平滑" IsChecked="{Binding Whiteboard.UseBezierSmoothing}" FontSize="12" VerticalAlignment="Center" />
+                        <CheckBox Content="无限画布" IsChecked="{Binding Whiteboard.IsInfiniteCanvasEnabled}" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <!-- 右侧：撤销/重做/清空 -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Button Content="适配内容" Padding="10,6" VerticalAlignment="Center"
+                                Command="{Binding Whiteboard.FitToContentCommand}" ToolTip.Tip="适配内容 (Ctrl+1)"
+                                IsEnabled="{Binding Whiteboard.CanUseInfiniteCanvasControls}" />
+                        <Button Content="{Binding Whiteboard.ZoomDisplay}" Padding="10,6" VerticalAlignment="Center"
+                                Command="{Binding Whiteboard.ResetViewCommand}" ToolTip.Tip="重置视图 (Ctrl+0)"
+                                IsEnabled="{Binding Whiteboard.CanUseInfiniteCanvasControls}" />
                         <Button Content="⟲" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                 Command="{Binding Whiteboard.UndoCommand}" ToolTip.Tip="撤销 (Ctrl+Z)" />
                         <Button Content="⟳" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"

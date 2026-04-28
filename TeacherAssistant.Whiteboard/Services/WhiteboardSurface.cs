@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using TeacherAssistant.Whiteboard.Interactions;
 using TeacherAssistant.Whiteboard.Models;
 using TeacherAssistant.Whiteboard.Undo;
@@ -18,9 +16,9 @@ namespace TeacherAssistant.Whiteboard.Services;
 public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 {
     private readonly WhiteboardDocument _document = new();
-    private readonly RenderCache _renderCache = new();
     private readonly HighlighterCompositor _highlighter = new();
     private readonly SurfaceRenderCoordinator _renderCoordinator = new();
+    private readonly InkTileCache _inkTileCache = new();
     private readonly TransformInteractionService _transformInteraction;
     
     private readonly Stack<IUndoCommand> _undoStack = new();
@@ -31,6 +29,8 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private readonly List<LaserStroke> _laserStrokes = new();
     private DispatcherTimer? _laserTimer;
     private DispatcherTimer? _eraseRenderTimer;
+    private DispatcherTimer? _tileRebuildTimer;
+    private DispatcherTimer? _previewClearTimer;
     private bool _eraseRenderPending;
     
     private readonly Dictionary<long, WhiteboardStroke> _activeStrokes = new();
@@ -38,17 +38,20 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private IToolSession? _activeSession;
     private bool _usePenNibEffect = true;
     private bool _useBezierSmoothing = true;
+    private bool _isInfiniteCanvasEnabled = true;
+    private Vector _lastPanDirection;
+    private double _zoom = 1.0;
 
     private WhiteboardOptions _options = WhiteboardOptions.Default;
+    private Point _viewportOrigin;
+    private Size _viewportSize;
 
     public WhiteboardDocument Document => _document;
     public WhiteboardOptions Options { get => _options; set => SetProperty(ref _options, value ?? WhiteboardOptions.Default); }
-    public IReadOnlyList<WhiteboardStroke> CompletedStrokes => _document.Strokes.Select(ConvertToLegacyStroke).ToList();
     public IReadOnlyList<WhiteboardItemBase> Items => _document.Items;
     public WhiteboardItemBase? SelectedItem => _transformInteraction.SelectedItem;
     public WhiteboardImageItem? SelectedImage => _transformInteraction.SelectedImage;
     public WhiteboardShapeItem? SelectedShape => _transformInteraction.SelectedShape;
-    public WriteableBitmap? Bitmap => _renderCoordinator.Bitmap;
     public WriteableBitmap? PreviewBitmap => _renderCoordinator.PreviewBitmap;
     public double? ActiveSnapX => _transformInteraction.ActiveSnapX;
     public double? ActiveSnapY => _transformInteraction.ActiveSnapY;
@@ -56,11 +59,61 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public IReadOnlyList<LaserStroke> LaserStrokes => _laserStrokes;
     public bool CanUndo => _undoStack.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
+    public Point ViewportOrigin
+    {
+        get => _viewportOrigin;
+        private set
+        {
+            if (SetProperty(ref _viewportOrigin, value))
+            {
+                RebuildActiveStrokePreview();
+                NotifySurfaceChanged();
+            }
+        }
+    }
+
+    public Size ViewportSize => _viewportSize;
+    public double Zoom
+    {
+        get => _zoom;
+        private set
+        {
+            var clamped = Math.Clamp(value, 0.25, 4.0);
+            if (SetProperty(ref _zoom, clamped))
+            {
+                RebuildActiveStrokePreview();
+                EnsureTileRebuildScheduled();
+                NotifySurfaceChanged();
+            }
+        }
+    }
 
     public bool UsePenNibEffect 
     { 
         get => _usePenNibEffect; 
         set { if (SetProperty(ref _usePenNibEffect, value)) RasterizeAll(); } 
+    }
+
+    public bool IsInfiniteCanvasEnabled
+    {
+        get => _isInfiniteCanvasEnabled;
+        set
+        {
+            if (!SetProperty(ref _isInfiniteCanvasEnabled, value))
+            {
+                return;
+            }
+
+            if (!value)
+            {
+                _lastPanDirection = default;
+                _tileRebuildTimer?.Stop();
+                Zoom = 1.0;
+                ViewportOrigin = new Point(0, 0);
+            }
+
+            RasterizeAll();
+        }
     }
 
     public bool UseBezierSmoothing 
@@ -72,16 +125,140 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public WhiteboardSurface()
     {
         _transformInteraction = new TransformInteractionService(
-            () => _options.HitTestPadding,
-            () => _options.SnapThreshold,
+            () => ScreenLengthToWorld(_options.HitTestPadding),
+            () => ScreenLengthToWorld(_options.SnapThreshold),
             () => _options.SnapGridSize);
     }
 
     public void EnsureSize(int width, int height)
     {
         if (width <= 0 || height <= 0) return;
+        var newSize = new Size(width, height);
+        if (_viewportSize != newSize)
+        {
+            _viewportSize = newSize;
+            OnPropertyChanged(nameof(ViewportSize));
+        }
         _renderCoordinator.EnsureSize(width, height);
-        _highlighter.EnsureSize(width, height); _renderCache.EnsureSize(width, height); RasterizeAll();
+        _highlighter.EnsureSize(width, height);
+        RasterizeAll();
+    }
+
+    public Point ScreenToWorld(Point point)
+        => new((point.X / EffectiveZoom) + ViewportOrigin.X, (point.Y / EffectiveZoom) + ViewportOrigin.Y);
+
+    public Point WorldToScreen(Point point)
+        => new((point.X - ViewportOrigin.X) * EffectiveZoom, (point.Y - ViewportOrigin.Y) * EffectiveZoom);
+
+    public Rect GetViewportWorldBounds() => new(ViewportOrigin, new Size(_viewportSize.Width / EffectiveZoom, _viewportSize.Height / EffectiveZoom));
+
+    public Matrix GetWorldToScreenMatrix()
+        => new(EffectiveZoom, 0, 0, EffectiveZoom, -ViewportOrigin.X * EffectiveZoom, -ViewportOrigin.Y * EffectiveZoom);
+
+    public double ScreenLengthToWorld(double screenLength) => screenLength / EffectiveZoom;
+
+    public void RenderCommittedInk(DrawingContext context)
+    {
+        var hasVisibleCacheMiss = _inkTileCache.Render(
+            context,
+            GetViewportWorldBounds(),
+            _document,
+            ConvertStrokeToWorldSpace,
+            _useBezierSmoothing,
+            _usePenNibEffect,
+            EffectiveZoom,
+            allowFallback: _activeStrokes.Count == 0);
+
+        if (hasVisibleCacheMiss && _activeStrokes.Count == 0)
+        {
+            EnsureTileRebuildScheduled();
+        }
+    }
+
+    public void PanViewport(Vector deltaScreen)
+    {
+        if (!IsInfiniteCanvasEnabled || deltaScreen == default)
+        {
+            return;
+        }
+
+        _lastPanDirection = deltaScreen;
+        ViewportOrigin = new Point(
+            ViewportOrigin.X - (deltaScreen.X / EffectiveZoom),
+            ViewportOrigin.Y - (deltaScreen.Y / EffectiveZoom));
+        EnsureTileRebuildScheduled();
+    }
+
+    public void ZoomAt(Point screenAnchor, double zoomFactor)
+    {
+        if (!IsInfiniteCanvasEnabled || zoomFactor <= 0)
+        {
+            return;
+        }
+
+        var worldAnchor = ScreenToWorld(screenAnchor);
+        var oldZoom = Zoom;
+        Zoom *= zoomFactor;
+
+        if (Math.Abs(Zoom - oldZoom) <= double.Epsilon)
+        {
+            return;
+        }
+
+        ViewportOrigin = new Point(
+            worldAnchor.X - (screenAnchor.X / Zoom),
+            worldAnchor.Y - (screenAnchor.Y / Zoom));
+        _lastPanDirection = default;
+        EnsureTileRebuildScheduled();
+    }
+
+    public void ResetViewport()
+    {
+        if (!IsInfiniteCanvasEnabled)
+        {
+            return;
+        }
+
+        _lastPanDirection = default;
+        Zoom = 1.0;
+        ViewportOrigin = new Point(0, 0);
+        EnsureTileRebuildScheduled();
+    }
+
+    public void FitToContent(double viewportPaddingScreen = 48)
+    {
+        if (!IsInfiniteCanvasEnabled)
+        {
+            return;
+        }
+
+        var contentBounds = GetContentBounds();
+        if (contentBounds is null)
+        {
+            ResetViewport();
+            return;
+        }
+
+        if (_viewportSize.Width <= 0 || _viewportSize.Height <= 0)
+        {
+            return;
+        }
+
+        var paddedWidth = Math.Max(1, _viewportSize.Width - (viewportPaddingScreen * 2));
+        var paddedHeight = Math.Max(1, _viewportSize.Height - (viewportPaddingScreen * 2));
+        var targetWidth = Math.Max(1, contentBounds.Value.Width);
+        var targetHeight = Math.Max(1, contentBounds.Value.Height);
+
+        var fitZoomX = paddedWidth / targetWidth;
+        var fitZoomY = paddedHeight / targetHeight;
+        var targetZoom = Math.Clamp(Math.Min(fitZoomX, fitZoomY), 0.25, 4.0);
+
+        _lastPanDirection = default;
+        Zoom = targetZoom;
+        ViewportOrigin = new Point(
+            contentBounds.Value.Center.X - ((_viewportSize.Width / Zoom) / 2.0),
+            contentBounds.Value.Center.Y - ((_viewportSize.Height / Zoom) / 2.0));
+        EnsureTileRebuildScheduled();
     }
 
     public void SetActiveSession(IToolSession? session) { _activeSession = session; }
@@ -90,6 +267,8 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public void BeginStroke(Point point, Color color, double thickness, WhiteboardTool tool, long pointerId)
     {
         DeselectImage();
+        CancelDeferredPreviewClear();
+        _tileRebuildTimer?.Stop();
 
         if (tool == WhiteboardTool.LaserPointer)
         {
@@ -159,7 +338,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         }
         else
         {
-            _renderCoordinator.RenderStrokePreview(stroke, _useBezierSmoothing, _usePenNibEffect);
+            _renderCoordinator.RenderStrokePreview(CreateViewportStroke(stroke), _useBezierSmoothing, _usePenNibEffect);
         }
         NotifyRenderChanged();
     }
@@ -175,14 +354,10 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
         if (!_activeStrokes.TryGetValue(pointerId, out var stroke)) return;
 
-        // 烘焙到主位图层
-        if (stroke.Tool != WhiteboardTool.Highlighter)
-        {
-            _renderCoordinator.CommitStroke(stroke, _useBezierSmoothing, _usePenNibEffect);
-        }
+        var element = ConvertToDocumentElement(stroke);
+        var affectedBounds = element.Bounds;
 
         // 加入完成列表
-        var element = ConvertToDocumentElement(stroke);
         ExecuteCommand(new AddStrokeCommand(_document, element));
 
         // 清理状态
@@ -199,16 +374,25 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
                 if (active.Tool != WhiteboardTool.Highlighter)
                 {
                     // 重绘整个笔迹到预览层
-                    WhiteboardStrokeRenderer.DrawStroke(_renderCoordinator.PreviewBitmap!, active, _useBezierSmoothing, _usePenNibEffect);
+                    WhiteboardStrokeRenderer.DrawStroke(_renderCoordinator.PreviewBitmap!, CreateViewportStroke(active), _useBezierSmoothing, _usePenNibEffect);
                 }
             }
         }
         else
         {
-            _renderCoordinator.ClearPreview();
+            ScheduleDeferredPreviewClear();
         }
 
         _highlighter.RebuildFromDocument(_document);
+        _inkTileCache.Invalidate(affectedBounds);
+        _inkTileCache.RebuildDirtyTiles(
+            affectedBounds,
+            _document,
+            ConvertStrokeToWorldSpace,
+            _useBezierSmoothing,
+            _usePenNibEffect,
+            EffectiveZoom);
+        EnsureTileRebuildScheduled();
         NotifySurfaceChanged();
     }
 
@@ -221,19 +405,33 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     public void RasterizeAll()
     {
-        _renderCoordinator.RasterizeAll(_document, ConvertToLegacyStroke, _useBezierSmoothing, _usePenNibEffect, _highlighter);
+        _lastPanDirection = default;
+        _inkTileCache.Invalidate();
+        _renderCoordinator.RasterizeAll(_document, _highlighter);
         _eraseRenderPending = false;
         NotifySurfaceChanged();
     }
 
-    private WhiteboardStroke ConvertToLegacyStroke(StrokeElement element)
+    private WhiteboardStroke ConvertStrokeToWorldSpace(StrokeElement element)
     {
         var stroke = new WhiteboardStroke(element.Color, element.Thickness, element.Tool);
-        foreach (var s in element.Samples)
+        foreach (var sample in element.Samples)
         {
-            var w = (_usePenNibEffect && element.Tool != WhiteboardTool.Highlighter) ? s.Width : element.Thickness;
-            stroke.Samples.Add(new StrokeSample(s.Point, s.Timestamp, w));
+            var width = (_usePenNibEffect && element.Tool != WhiteboardTool.Highlighter) ? sample.Width : element.Thickness;
+            stroke.Samples.Add(new StrokeSample(sample.Point, sample.Timestamp, width));
         }
+
+        return stroke;
+    }
+
+    private WhiteboardStroke CreateViewportStroke(WhiteboardStroke source)
+    {
+        var stroke = new WhiteboardStroke(source.Color, source.Thickness, source.Tool);
+        foreach (var sample in source.Samples)
+        {
+            stroke.Samples.Add(new StrokeSample(WorldToScreen(sample.Point), sample.Timestamp, sample.Width * EffectiveZoom));
+        }
+
         return stroke;
     }
 
@@ -256,7 +454,6 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     }
 
     private static Color GetStrokeColor(Color c, WhiteboardTool t) { if (t != WhiteboardTool.Highlighter) return c; return Color.FromArgb((byte)Math.Min((int)c.A, 96), c.R, c.G, c.B); }
-    public void RefreshRegion(Rect d) => RasterizeAll();
     public void RenderHighlighterPreview(DrawingContext c, Rect b) => _highlighter.Render(c, b);
     public void EraseAt(Point p, double r)
     {
@@ -277,12 +474,14 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
         foreach (var stroke in removed)
         {
+            _inkTileCache.Invalidate(stroke.Bounds);
             ExecuteCommand(new RemoveElementCommand(_document, stroke));
         }
 
+        EnsureTileRebuildScheduled();
         ScheduleEraseRender();
     }
-    public void Clear() { ExecuteCommand(new ClearCommand(_document)); _renderCoordinator.ClearAll(); _highlighter.Reset(); DeselectImage(); NotifySurfaceChanged(); }
+    public void Clear() { ExecuteCommand(new ClearCommand(_document)); _inkTileCache.Invalidate(); _renderCoordinator.ClearAll(); _highlighter.Reset(); DeselectImage(); NotifySurfaceChanged(); }
     public bool BeginImageDrag(Point point)
     {
         var item = _transformInteraction.SelectedItem;
@@ -326,8 +525,8 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         _initialTransform = null;
         NotifySurfaceChanged();
     }
-    public void AddImage(Bitmap b) { var size = _renderCoordinator.PixelSize; var s = Math.Min(Math.Min(size.Width * 0.6 / b.PixelSize.Width, size.Height * 0.6 / b.PixelSize.Height), 1.0); var img = new WhiteboardImageItem(b, new Point(size.Width / 2.0, size.Height / 2.0)); img.SetScale(s, s); img.PropertyChanged += OnObjectPropertyChanged; ExecuteCommand(new AddItemCommand(_document, img)); _transformInteraction.Select(img); NotifySurfaceChanged(); }
-    public void AddShape(WhiteboardShapeType t, Size sz, Color sc, Color fc, double st) { var size = _renderCoordinator.PixelSize; var sh = new WhiteboardShapeItem(t, new Point(size.Width / 2.0, size.Height / 2.0), sz, sc, fc, st); sh.PropertyChanged += OnObjectPropertyChanged; ExecuteCommand(new AddItemCommand(_document, sh)); _transformInteraction.Select(sh); NotifySurfaceChanged(); }
+    public void AddImage(Bitmap b) { var size = _renderCoordinator.PixelSize; var s = Math.Min(Math.Min(size.Width * 0.6 / b.PixelSize.Width, size.Height * 0.6 / b.PixelSize.Height), 1.0); var img = new WhiteboardImageItem(b, GetViewportWorldBounds().Center); img.SetScale(s, s); img.PropertyChanged += OnObjectPropertyChanged; ExecuteCommand(new AddItemCommand(_document, img)); _transformInteraction.Select(img); NotifySurfaceChanged(); }
+    public void AddShape(WhiteboardShapeType t, Size sz, Color sc, Color fc, double st) { var sh = new WhiteboardShapeItem(t, GetViewportWorldBounds().Center, sz, sc, fc, st); sh.PropertyChanged += OnObjectPropertyChanged; ExecuteCommand(new AddItemCommand(_document, sh)); _transformInteraction.Select(sh); NotifySurfaceChanged(); }
     private void OnObjectPropertyChanged(object? s, PropertyChangedEventArgs e)
     {
         if (s is WhiteboardItemBase i &&
@@ -354,7 +553,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         WhiteboardItemBase? topHit = null;
         foreach (var i in _document.QueryItems(new Rect(p.X, p.Y, 0.001, 0.001)))
         {
-            if (i.HitTest(p, _options.HitTestPadding) != WhiteboardImageHitTest.None &&
+            if (i.HitTest(p, ScreenLengthToWorld(_options.HitTestPadding)) != WhiteboardImageHitTest.None &&
                 (topHit == null || GetItemIndex(i) > GetItemIndex(topHit)))
             {
                 topHit = i;
@@ -415,7 +614,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         var command = _undoStack.Pop();
         command.Undo();
         _redoStack.Push(command);
-        RasterizeAll();
+        RefreshAfterDocumentCommand(command);
         NotifyUndoRedoChanged();
     }
 
@@ -425,7 +624,7 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         var command = _redoStack.Pop();
         command.Redo();
         _undoStack.Push(command);
-        RasterizeAll();
+        RefreshAfterDocumentCommand(command);
         NotifyUndoRedoChanged();
     }
 
@@ -461,7 +660,11 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
             return;
         }
 
-        RasterizeAll();
+        _eraseRenderPending = false;
+        _highlighter.RebuildFromDocument(_document);
+        _lastPanDirection = default;
+        EnsureTileRebuildScheduled();
+        NotifySurfaceChanged();
     }
 
     private void StartLaserTimer()
@@ -495,6 +698,82 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         if (_laserStrokes.Count == 0) _laserTimer?.Stop();
     }
 
+    private void EnsureTileRebuildScheduled()
+    {
+        if (!_inkTileCache.HasDirtyTiles || _activeStrokes.Count > 0)
+        {
+            return;
+        }
+
+        _tileRebuildTimer ??= new DispatcherTimer(
+            TimeSpan.FromMilliseconds(16),
+            DispatcherPriority.Background,
+            OnTileRebuildTimerTick);
+
+        if (!_tileRebuildTimer.IsEnabled)
+        {
+            _tileRebuildTimer.Start();
+        }
+    }
+
+    private void OnTileRebuildTimerTick(object? sender, EventArgs e)
+    {
+        if (_activeStrokes.Count > 0)
+        {
+            _tileRebuildTimer?.Stop();
+            return;
+        }
+
+        var rebuiltCount = _inkTileCache.RebuildDirtyTilesNearViewport(
+            GetViewportWorldBounds(),
+            _document,
+            ConvertStrokeToWorldSpace,
+            _useBezierSmoothing,
+            _usePenNibEffect,
+            maxTilesPerPass: 3,
+            prewarmMarginTiles: 1,
+            preferredPanDirection: _lastPanDirection,
+            renderScale: EffectiveZoom);
+
+        if (rebuiltCount > 0)
+        {
+            NotifySurfaceChanged();
+        }
+
+        if (!_inkTileCache.HasDirtyTiles)
+        {
+            _tileRebuildTimer?.Stop();
+        }
+    }
+
+    private void ScheduleDeferredPreviewClear()
+    {
+        _previewClearTimer ??= new DispatcherTimer(
+            TimeSpan.FromMilliseconds(16),
+            DispatcherPriority.Background,
+            OnPreviewClearTimerTick);
+
+        _previewClearTimer.Stop();
+        _previewClearTimer.Start();
+    }
+
+    private void CancelDeferredPreviewClear()
+    {
+        _previewClearTimer?.Stop();
+    }
+
+    private void OnPreviewClearTimerTick(object? sender, EventArgs e)
+    {
+        _previewClearTimer?.Stop();
+        if (_activeStrokes.Count > 0)
+        {
+            return;
+        }
+
+        _renderCoordinator.ClearPreview();
+        NotifyRenderChanged();
+    }
+
     public void DeselectImage()
     {
         _transformInteraction.Deselect();
@@ -504,7 +783,10 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     public void Dispose()
     {
         _eraseRenderTimer?.Stop();
+        _tileRebuildTimer?.Stop();
+        _previewClearTimer?.Stop();
         _renderCoordinator.Dispose();
+        _inkTileCache.Dispose();
         _highlighter.Dispose();
         foreach (var i in _document.Items)
         {
@@ -518,13 +800,11 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
     private void NotifySurfaceChanged()
     {
-        OnPropertyChanged(nameof(CompletedStrokes));
         OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(ActiveStroke));
         OnPropertyChanged(nameof(SelectedItem));
         OnPropertyChanged(nameof(SelectedImage));
         OnPropertyChanged(nameof(SelectedShape));
-        OnPropertyChanged(nameof(Bitmap));
         OnPropertyChanged(nameof(PreviewBitmap));
         OnPropertyChanged(nameof(ActiveSnapX));
         OnPropertyChanged(nameof(ActiveSnapY));
@@ -534,8 +814,60 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
     private void NotifyRenderChanged()
     {
         OnPropertyChanged(nameof(ActiveStroke));
-        OnPropertyChanged(nameof(Bitmap));
         OnPropertyChanged(nameof(PreviewBitmap));
+    }
+
+    private void RebuildActiveStrokePreview()
+    {
+        _renderCoordinator.ClearPreview();
+        foreach (var active in _activeStrokes.Values)
+        {
+            if (active.Tool == WhiteboardTool.Highlighter)
+            {
+                continue;
+            }
+
+            WhiteboardStrokeRenderer.DrawStroke(_renderCoordinator.PreviewBitmap!, CreateViewportStroke(active), _useBezierSmoothing, _usePenNibEffect);
+        }
+    }
+
+    private void RefreshAfterDocumentCommand(IUndoCommand command)
+    {
+        switch (command)
+        {
+            case AddStrokeCommand addStroke:
+                RefreshAfterStrokeChange(addStroke.Stroke);
+                break;
+            case RemoveElementCommand removeElement when removeElement.Element is StrokeElement stroke:
+                RefreshAfterStrokeChange(stroke);
+                break;
+            case ClearCommand:
+                _lastPanDirection = default;
+                _inkTileCache.Invalidate();
+                _highlighter.RebuildFromDocument(_document);
+                _renderCoordinator.ClearPreview();
+                NotifySurfaceChanged();
+                break;
+            default:
+                _lastPanDirection = default;
+                RasterizeAll();
+                break;
+        }
+    }
+
+    private void RefreshAfterStrokeChange(StrokeElement stroke)
+    {
+        if (stroke.Tool == WhiteboardTool.Highlighter)
+        {
+            _highlighter.RebuildFromDocument(_document);
+            _lastPanDirection = default;
+            NotifySurfaceChanged();
+            return;
+        }
+
+        _inkTileCache.Invalidate(stroke.Bounds);
+        EnsureTileRebuildScheduled();
+        NotifySurfaceChanged();
     }
 
     private int GetItemIndex(WhiteboardItemBase item)
@@ -550,6 +882,40 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
 
         return -1;
     }
+
+    private Rect? GetContentBounds()
+    {
+        Rect? bounds = null;
+
+        foreach (var stroke in _document.Strokes)
+        {
+            bounds = Union(bounds, stroke.Bounds);
+        }
+
+        foreach (var item in _document.Items)
+        {
+            bounds = Union(bounds, item.Bounds);
+        }
+
+        return bounds;
+    }
+
+    private static Rect Union(Rect? current, Rect next)
+    {
+        if (current is null)
+        {
+            return next;
+        }
+
+        var existing = current.Value;
+        var left = Math.Min(existing.Left, next.Left);
+        var top = Math.Min(existing.Top, next.Top);
+        var right = Math.Max(existing.Right, next.Right);
+        var bottom = Math.Max(existing.Bottom, next.Bottom);
+        return new Rect(left, top, right - left, bottom - top);
+    }
+
+    private double EffectiveZoom => IsInfiniteCanvasEnabled ? Zoom : 1.0;
 
     private static bool AreClose(Point a, Point b) => Math.Abs(a.X - b.X) < 0.25 && Math.Abs(a.Y - b.Y) < 0.25;
     private static bool IsPointNearStroke(Point point, StrokeElement stroke, double radius) { var radiusSquared = radius * radius; foreach (var sample in stroke.Samples) { var dx = point.X - sample.Point.X; var dy = point.Y - sample.Point.Y; if (dx * dx + dy * dy <= radiusSquared) return true; } for (var i = 1; i < stroke.Samples.Count; i++) if (DistanceToSegment(point.X, point.Y, stroke.Samples[i - 1].Point, stroke.Samples[i].Point) <= radius) return true; return false; }

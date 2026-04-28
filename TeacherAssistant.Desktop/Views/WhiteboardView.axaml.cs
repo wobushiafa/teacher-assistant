@@ -22,6 +22,8 @@ public partial class WhiteboardView : UserControl
 
     private readonly HashSet<long> _activeDrawingPointers = new();
     private bool _isDraggingImage;
+    private bool _isPanningViewport;
+    private Point _lastPanScreenPoint;
 
     public WhiteboardView()
     {
@@ -29,6 +31,7 @@ public partial class WhiteboardView : UserControl
         AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
         AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
         AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
+        AddHandler(PointerWheelChangedEvent, OnPointerWheelChanged, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
         AddHandler(PointerCaptureLostEvent, OnPointerCaptureLost, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
         AddHandler(PointerExitedEvent, OnPointerLeave, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
         
@@ -58,13 +61,29 @@ public partial class WhiteboardView : UserControl
     {
         if (ViewModel is null) return;
         var pointerPos = e.GetPosition(this);
+        var worldPoint = ViewModel.Surface.ScreenToWorld(pointerPos);
         var prop = e.GetCurrentPoint(this).Properties;
-        if (!prop.IsLeftButtonPressed) return;
         Focus();
+
+        if (prop.IsRightButtonPressed)
+        {
+            if (!ViewModel.Surface.IsInfiniteCanvasEnabled)
+            {
+                return;
+            }
+
+            _isPanningViewport = true;
+            _lastPanScreenPoint = pointerPos;
+            e.Pointer.Capture(this);
+            Cursor = MoveCursor;
+            return;
+        }
+
+        if (!prop.IsLeftButtonPressed) return;
 
         if (ViewModel.SelectedInteractionMode == WhiteboardInteractionMode.Mouse)
         {
-            if (ViewModel.Surface.BeginImageDrag(pointerPos))
+            if (ViewModel.Surface.BeginImageDrag(worldPoint))
             {
                 _isDraggingImage = true;
                 e.Pointer.Capture(this);
@@ -75,7 +94,7 @@ public partial class WhiteboardView : UserControl
         }
 
         _activeDrawingPointers.Add(e.Pointer.Id);
-        ViewModel.BeginStroke(pointerPos, e.Pointer.Id);
+        ViewModel.BeginStroke(worldPoint, e.Pointer.Id);
         e.Pointer.Capture(this);
     }
 
@@ -83,10 +102,19 @@ public partial class WhiteboardView : UserControl
     {
         if (ViewModel is null) return;
         var pointerPos = e.GetPosition(this);
+        var worldPoint = ViewModel.Surface.ScreenToWorld(pointerPos);
+
+        if (_isPanningViewport)
+        {
+            var delta = pointerPos - _lastPanScreenPoint;
+            ViewModel.Surface.PanViewport(delta);
+            _lastPanScreenPoint = pointerPos;
+            return;
+        }
 
         if (_isDraggingImage)
         {
-            ViewModel.Surface.ContinueImageDrag(pointerPos);
+            ViewModel.Surface.ContinueImageDrag(worldPoint);
             UpdateCursor(pointerPos);
             return;
         }
@@ -103,18 +131,23 @@ public partial class WhiteboardView : UserControl
         {
             foreach (var pt in intermediatePoints)
             {
-                ViewModel.ContinueStroke(pt.Position, e.Pointer.Id);
+                ViewModel.ContinueStroke(ViewModel.Surface.ScreenToWorld(pt.Position), e.Pointer.Id);
             }
         }
         else
         {
-            ViewModel.ContinueStroke(pointerPos, e.Pointer.Id);
+            ViewModel.ContinueStroke(worldPoint, e.Pointer.Id);
         }
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_isDraggingImage)
+        if (_isPanningViewport)
+        {
+            _isPanningViewport = false;
+            Cursor = null;
+        }
+        else if (_isDraggingImage)
         {
             ViewModel?.Surface.EndImageDrag();
             _isDraggingImage = false;
@@ -127,8 +160,32 @@ public partial class WhiteboardView : UserControl
         UpdateCursor(e.GetPosition(this));
     }
 
+    private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (ViewModel is null)
+        {
+            return;
+        }
+
+        var deltaY = e.Delta.Y;
+        if (!ViewModel.Surface.IsInfiniteCanvasEnabled || Math.Abs(deltaY) <= double.Epsilon)
+        {
+            return;
+        }
+
+        var zoomFactor = Math.Pow(1.08, deltaY);
+        ViewModel.Surface.ZoomAt(e.GetPosition(this), zoomFactor);
+        e.Handled = true;
+    }
+
     private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
+        if (_isPanningViewport)
+        {
+            _isPanningViewport = false;
+            Cursor = null;
+            return;
+        }
         if (_isDraggingImage)
         {
             ViewModel?.Surface.EndImageDrag();
@@ -141,7 +198,7 @@ public partial class WhiteboardView : UserControl
 
     private void OnPointerLeave(object? sender, PointerEventArgs e)
     {
-        if (_activeDrawingPointers.Count > 0 || _isDraggingImage) return;
+        if (_activeDrawingPointers.Count > 0 || _isDraggingImage || _isPanningViewport) return;
         Cursor = null;
     }
 
@@ -168,6 +225,16 @@ public partial class WhiteboardView : UserControl
             if (ViewModel.RedoCommand.CanExecute(null)) ViewModel.RedoCommand.Execute(null);
             e.Handled = true;
         }
+        else if (e.Key == Key.D0 && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (ViewModel.Surface.IsInfiniteCanvasEnabled && ViewModel.ResetViewCommand.CanExecute(null)) ViewModel.ResetViewCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.D1 && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (ViewModel.Surface.IsInfiniteCanvasEnabled && ViewModel.FitToContentCommand.CanExecute(null)) ViewModel.FitToContentCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void UpdateCursor(Point point)
@@ -178,7 +245,7 @@ public partial class WhiteboardView : UserControl
             return;
         }
 
-        var (hit, rotation) = ViewModel.Surface.GetHitInfo(point);
+        var (hit, rotation) = ViewModel.Surface.GetHitInfo(ViewModel.Surface.ScreenToWorld(point));
         Cursor = hit switch
         {
             WhiteboardImageHitTest.None => null,

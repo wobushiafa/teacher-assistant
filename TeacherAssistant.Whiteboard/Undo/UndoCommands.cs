@@ -19,6 +19,8 @@ public class AddStrokeCommand : IUndoCommand
     private readonly WhiteboardDocument _document;
     private readonly StrokeElement _stroke;
 
+    public StrokeElement Stroke => _stroke;
+
     public AddStrokeCommand(WhiteboardDocument document, StrokeElement stroke)
     {
         _document = document;
@@ -51,6 +53,8 @@ public class RemoveElementCommand : IUndoCommand
     private readonly WhiteboardDocument _document;
     private readonly IWhiteboardElement _element;
     private int _index;
+
+    public IWhiteboardElement Element => _element;
 
     public RemoveElementCommand(WhiteboardDocument document, IWhiteboardElement element)
     {
