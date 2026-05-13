@@ -107,6 +107,12 @@
                         </StackPanel>
 
                         <StackPanel Spacing="8">
+                            <TextBlock Text="笔迹数据" FontWeight="SemiBold" />
+                            <Button Content="导入笔迹数据" Click="OnImportInkDataClicked" />
+                            <Button Content="导出笔迹数据" Click="OnExportInkDataClicked" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
                             <TextBlock Text="插入形状" FontWeight="SemiBold" />
                             <WrapPanel>
                                 <Button Margin="2" Content="矩形" Command="{Binding Whiteboard.AddRectangleCommand}" />

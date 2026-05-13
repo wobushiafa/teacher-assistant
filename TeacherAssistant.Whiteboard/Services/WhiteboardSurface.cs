@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using System.IO;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -482,6 +483,39 @@ public sealed class WhiteboardSurface : NotifyPropertyChangedObject, IDisposable
         ScheduleEraseRender();
     }
     public void Clear() { ExecuteCommand(new ClearCommand(_document)); _inkTileCache.Invalidate(); _renderCoordinator.ClearAll(); _highlighter.Reset(); DeselectImage(); NotifySurfaceChanged(); }
+    public string ExportInkData()
+        => WhiteboardInkDataSerializer.Serialize(_document.Strokes);
+
+    public void ImportInkData(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new InvalidDataException("笔迹数据为空。");
+        }
+
+        var strokes = WhiteboardInkDataSerializer.Deserialize(json);
+
+        _document.Clear();
+        _transformInteraction.Deselect();
+        _activeStrokes.Clear();
+        _filters.Clear();
+        _laserStrokes.Clear();
+        _undoStack.Clear();
+        _redoStack.Clear();
+
+        foreach (var stroke in strokes)
+        {
+            _document.AddStroke(stroke);
+        }
+
+        _lastPanDirection = default;
+        _inkTileCache.Invalidate();
+        _renderCoordinator.ClearAll();
+        _highlighter.RebuildFromDocument(_document);
+        NotifyUndoRedoChanged();
+        NotifySurfaceChanged();
+    }
+
     public bool BeginImageDrag(Point point)
     {
         var item = _transformInteraction.SelectedItem;
